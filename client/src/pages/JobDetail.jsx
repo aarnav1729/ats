@@ -376,7 +376,7 @@ export default function JobDetail() {
   const handleGenerateQR = async () => {
     try {
       const res = await jobsAPI.qrCode(id, {
-        url: `${window.location.origin}/careers/${job?.job_id || id}`,
+        url: `${window.location.origin}/careers/${job?.id || id}`,
       });
       setQrData(res.data);
       setShowQR(true);
@@ -384,7 +384,7 @@ export default function JobDetail() {
   };
 
   const handleShareLink = () => {
-    const link = `${window.location.origin}/careers/${job?.job_id || id}`;
+    const link = `${window.location.origin}/careers/${job?.id || id}`;
     navigator.clipboard.writeText(link);
     toast.success('Application link copied to clipboard');
   };
@@ -1401,12 +1401,12 @@ export default function JobDetail() {
               <p className="text-sm text-gray-500 text-center py-4">QR code generated. Share the application link below:</p>
             )}
             <div className="mt-4 flex items-center gap-2">
-              <input type="text" readOnly value={qrData?.url || `${window.location.origin}/careers/${job?.job_id || id}`} className="input-field text-xs flex-1" />
-              <button onClick={() => { navigator.clipboard.writeText(qrData?.url || `${window.location.origin}/careers/${job?.job_id || id}`); toast.success('Copied'); }} className="btn-secondary text-sm py-1">Copy</button>
+              <input type="text" readOnly value={qrData?.url || `${window.location.origin}/careers/${job?.id || id}`} className="input-field text-xs flex-1" />
+              <button onClick={() => { navigator.clipboard.writeText(qrData?.url || `${window.location.origin}/careers/${job?.id || id}`); toast.success('Copied'); }} className="btn-secondary text-sm py-1">Copy</button>
             </div>
             <button
               type="button"
-              onClick={() => window.open(qrData?.url || `${window.location.origin}/careers/${job?.job_id || id}`, '_blank', 'noopener,noreferrer')}
+              onClick={() => window.open(qrData?.url || `${window.location.origin}/careers/${job?.id || id}`, '_blank', 'noopener,noreferrer')}
               className="btn-secondary mt-4"
             >
               Open Public Job Page

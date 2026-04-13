@@ -910,7 +910,7 @@ router.get('/:id/stage-counts', adminOrRecruiter, async (req, res) => {
 // POST /:id/qr-code - Generate QR code for the job
 router.post('/:id/qr-code', adminOrRecruiter, async (req, res) => {
   try {
-    const job = await pool.query('SELECT job_id FROM jobs WHERE id = $1', [req.params.id]);
+    const job = await pool.query('SELECT id, job_id FROM jobs WHERE id = $1', [req.params.id]);
     if (job.rows.length === 0) {
       return res.status(404).json({ error: 'Job not found' });
     }
@@ -918,7 +918,7 @@ router.post('/:id/qr-code', adminOrRecruiter, async (req, res) => {
     const requestedBaseUrl = String(req.body.base_url || req.headers.origin || '').replace(/\/$/, '');
     const fallbackBaseUrl = `${req.protocol || 'https'}://${req.get('host')}`.replace(/\/$/, '');
     const baseUrl = requestedBaseUrl || fallbackBaseUrl;
-    const url = req.body.url || `${baseUrl}/careers/${job.rows[0].job_id}`;
+    const url = req.body.url || `${baseUrl}/careers/${job.rows[0].id}`;
     const qrDataUrl = await QRCode.toDataURL(url, { width: 300, margin: 2 });
     res.json({ qr_code: qrDataUrl, url });
   } catch (err) {

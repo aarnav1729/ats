@@ -62,6 +62,15 @@ export default function InterviewSchedule() {
     [suggestedSlots]
   );
 
+
+  useEffect(() => {
+    if (!scheduleForm.datetime || !slotOptions.length) return;
+    const matched = slotOptions.find((option) => option.value === scheduleForm.datetime);
+    if (matched?.key && scheduleForm.source_slot !== matched.key) {
+      setScheduleForm((prev) => ({ ...prev, source_slot: matched.key }));
+    }
+  }, [scheduleForm.datetime, scheduleForm.source_slot, slotOptions]);
+
   const useSuggestedSlot = (slot) => {
     const inputValue = toDatetimeLocalValue(slot);
     const matched = slotOptions.find((option) => option.value === inputValue);
@@ -81,12 +90,16 @@ export default function InterviewSchedule() {
     const initialDatetime = task?.scheduled_datetime
       ? toDatetimeLocalValue(task.scheduled_datetime)
       : toDatetimeLocalValue(app?.suggested_interview_datetime1);
+    const initialSourceSlot = [app?.suggested_interview_datetime1, app?.suggested_interview_datetime2]
+      .map((slot, index) => ({ key: `${index + 1}`, value: toDatetimeLocalValue(slot) }))
+      .find((slot) => slot.value && slot.value === initialDatetime)?.key || '';
+
     setScheduleForm({
       datetime: initialDatetime,
       note: task?.scheduled_datetime
         ? 'Interview rescheduled after recruiter-candidate confirmation.'
         : 'Interview confirmed after candidate and panel alignment.',
-      source_slot: '',
+      source_slot: initialSourceSlot,
     });
   };
 
