@@ -45,6 +45,8 @@ export default function InterviewWorkspace() {
     remarks: '',
   });
   const [noShowReason, setNoShowReason] = useState('');
+  const [preScreenRejectReason, setPreScreenRejectReason] = useState('');
+  const [preScreenRejectRemarks, setPreScreenRejectRemarks] = useState('');
 
   const canCoordinate = hasRole('hr_admin') || hasRole('hr_recruiter');
   const canReview = hasRole('interviewer') || hasRole('hod') || hasRole('hr_admin');
@@ -108,6 +110,33 @@ export default function InterviewWorkspace() {
       await loadInterview();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to suggest slots');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+
+  const rejectBeforeScheduling = async () => {
+    if (!preScreenRejectReason) {
+      toast.error('Select a rejection reason');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      await interviewsAPI.feedback(interview.id, {
+        decision: 'reject',
+        technical_score: Number(feedbackForm.technical_score),
+        behavioral_score: Number(feedbackForm.behavioral_score),
+        company_fit_score: Number(feedbackForm.company_fit_score),
+        remarks: preScreenRejectRemarks || 'Rejected during pre-screen review before slot suggestion.',
+        rejection_reasons: [preScreenRejectReason],
+      });
+      toast.success('Candidate marked as HOD Rejected');
+      setPreScreenRejectReason('');
+      setPreScreenRejectRemarks('');
+      await loadInterview();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to reject candidate');
     } finally {
       setSubmitting(false);
     }
@@ -373,6 +402,38 @@ export default function InterviewWorkspace() {
               <button onClick={suggestSlots} disabled={submitting} className="btn-primary mt-4 w-full disabled:opacity-50">
                 {submitting ? 'Submitting...' : 'Share Slots with Recruiter'}
               </button>
+
+              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-rose-900">Reject before scheduling</p>
+                  <InfoTip text="If the profile should not proceed after dossier review, reject immediately with a reason. ATS marks this as HODRejected without waiting for slot suggestions." />
+                </div>
+                <select
+                  value={preScreenRejectReason}
+                  onChange={(event) => setPreScreenRejectReason(event.target.value)}
+                  className="input-field mt-3"
+                >
+                  <option value="">Select rejection reason</option>
+                  {rejectionReasons.map((reason) => (
+                    <option key={`prescreen-${reason.id}`} value={reason.reason}>{reason.reason}</option>
+                  ))}
+                </select>
+                <textarea
+                  rows={3}
+                  value={preScreenRejectRemarks}
+                  onChange={(event) => setPreScreenRejectRemarks(event.target.value)}
+                  className="input-field mt-3"
+                  placeholder="Optional remarks for recruiter and audit trail"
+                />
+                <button
+                  type="button"
+                  onClick={rejectBeforeScheduling}
+                  disabled={submitting || !preScreenRejectReason}
+                  className="mt-3 w-full rounded-xl border border-rose-200 bg-rose-100 px-4 py-2.5 text-sm font-semibold text-rose-700 hover:bg-rose-200 disabled:opacity-50"
+                >
+                  Mark as HOD Rejected
+                </button>
+              </div>
             </div>
           )}
 

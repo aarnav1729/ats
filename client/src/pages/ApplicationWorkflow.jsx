@@ -258,6 +258,7 @@ export default function ApplicationWorkflow() {
   const [aopExceededAmount, setAopExceededAmount] = useState('');
   const [clearanceComments, setClearanceComments] = useState('');
   const [cxoEmail, setCxoEmail] = useState('');
+  const [ctcEmailBody, setCtcEmailBody] = useState('');
   const [secondaryRecruiterEmail, setSecondaryRecruiterEmail] = useState('');
   const [disposition, setDisposition] = useState({
     target_job_id: '',
@@ -546,15 +547,21 @@ export default function ApplicationWorkflow() {
   const handleClearanceAction = async (action, extra = {}) => {
     try {
       setClearanceLoading(true);
+      const finalComments = [clearanceComments, action === 'hr_send_to_cxo' ? ctcEmailBody : '']
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+        .join('\n\n');
+
       await candidatesAPI.clearanceAction(application.id, {
         action,
-        comments: clearanceComments,
+        comments: finalComments,
         cxo_email: cxoEmail,
         ctc_data: ctcForm,
         ...extra,
       });
       toast.success(`Clearance action '${action.replace(/_/g, ' ')}' completed`);
       setClearanceComments('');
+      if (action === 'hr_send_to_cxo') setCtcEmailBody('');
       await refresh();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to perform clearance action');
@@ -1133,6 +1140,13 @@ export default function ApplicationWorkflow() {
                         Send for Renegotiation
                       </button>
                       <div className="space-y-2">
+                        <textarea
+                          rows={3}
+                          value={ctcEmailBody}
+                          onChange={(e) => setCtcEmailBody(e.target.value)}
+                          className="input-field text-sm"
+                          placeholder="Simple email body for CTC comparison context (will be appended in the CXO escalation message)"
+                        />
                         <input
                           type="email"
                           value={cxoEmail}

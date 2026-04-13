@@ -265,7 +265,7 @@ export default function Masters() {
       {modalOpen && (
         <div className="app-modal-backdrop">
           <div className="app-modal-panel app-modal-panel-wide">
-            <div className="app-modal-body">
+            <div className="app-modal-body overflow-y-auto" style={{ maxHeight: 'calc(90vh - 120px)' }}>
             <h2 className="text-lg font-semibold mb-4">{editItem ? 'Edit' : 'Create'} {currentType.label.replace(/s$/, '')}</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               {currentType.fields.map(field => (

@@ -71,7 +71,7 @@ async function buildDemoStory(client) {
     job: job ? {
       ...job,
       route: `/jobs/${job.id}`,
-      public_route: `/careers/${job.job_id}`,
+      public_route: `/careers/${job.id}`,
     } : null,
     applications: applications.map((row) => ({
       ...row,
