@@ -78,9 +78,9 @@
   .chat-bubble-assistant { @apply rounded-[28px] border border-gray-200 bg-white px-5 py-4 shadow-sm; }
   .chat-bubble-user { @apply rounded-[28px] border border-indigo-200 bg-indigo-50 px-5 py-4 shadow-sm; }
   .app-modal-backdrop { @apply fixed inset-0 z-[120] flex items-center justify-center px-3 py-4 backdrop-blur-[4px]; background-color: rgba(2,6,23,0.58); animation: fadeIn 0.2s ease-out; }
-  .app-modal-panel { @apply max-h-[94vh] w-[94vw] overflow-hidden rounded-[34px] border border-white/70 bg-white shadow-2xl; animation: modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-  .app-modal-panel-compact { @apply max-w-3xl; }
-  .app-modal-panel-wide { @apply max-w-7xl; }
+  .app-modal-panel { @apply max-h-[94vh] w-[90vw] overflow-hidden rounded-[34px] border border-white/70 bg-white shadow-2xl; animation: modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+  .app-modal-panel-compact { @apply max-w-[90vw] md:max-w-3xl; }
+  .app-modal-panel-wide { @apply max-w-[90vw]; }
   .app-modal-panel-full { @apply max-w-none; }
   .app-modal-header { @apply sticky top-0 z-10 border-b border-gray-200 px-6 py-5 backdrop-blur; background-color: rgba(255,255,255,0.96); }
   .app-modal-body { @apply px-6 py-5; }
