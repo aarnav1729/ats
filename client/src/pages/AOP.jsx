@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { aopAPI, mastersAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import DataTable from '../components/DataTable';
 
 export default function AOP() {
   const [data, setData] = useState([]);
@@ -100,56 +101,38 @@ export default function AOP() {
       </div>
 
       {/* Table */}
-      <div className="table-container">
-        <table className="w-full">
-          <thead><tr className="table-header">
-            <th className="px-4 py-3">Business Unit</th>
-            <th className="px-4 py-3">Department</th>
-            <th className="px-4 py-3">Max Headcount</th>
-            <th className="px-4 py-3">Current</th>
-            <th className="px-4 py-3">Remaining</th>
-            <th className="px-4 py-3">Year</th>
-            <th className="px-4 py-3">Actions</th>
-          </tr></thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={7} className="px-4 py-12 text-center text-gray-400">Loading...</td></tr>
-            ) : filteredData.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-12 text-center text-gray-400">No AOP data found</td></tr>
-            ) : filteredData.map(item => {
-              const remaining = item.max_headcount - parseInt(item.current_headcount || 0);
-              return (
-                <tr key={item.id} className="table-row">
-                  <td className="px-4 py-3 text-sm font-medium">{item.bu_name} ({item.bu_short_name})</td>
-                  <td className="px-4 py-3 text-sm">{item.department_name}</td>
-                  <td className="px-4 py-3">
-                    {editingId === item.id ? (
-                      <input type="number" value={editValue} onChange={e => setEditValue(e.target.value)}
-                        onBlur={() => handleInlineEdit(item.id)}
-                        onKeyDown={e => e.key === 'Enter' && handleInlineEdit(item.id)}
-                        className="input-field w-20" autoFocus />
-                    ) : (
-                      <span className="text-sm font-semibold cursor-pointer hover:text-indigo-600"
-                        onClick={() => { setEditingId(item.id); setEditValue(item.max_headcount); }}>
-                        {item.max_headcount}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-sm">{item.current_headcount || 0}</td>
-                  <td className="px-4 py-3">
-                    <span className={`badge ${remaining >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{remaining}</span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{item.fiscal_year}</td>
-                  <td className="px-4 py-3">
-                    <button onClick={async () => { await aopAPI.delete(item.id); toast.success('Deleted'); loadData(); }}
-                      className="text-sm text-red-600 hover:text-red-800 font-medium">Delete</button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {loading ? (
+        <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-indigo-600" /></div>
+      ) : (
+        <DataTable
+          title="AOP Plan"
+          data={filteredData}
+          exportFileName="aop"
+          emptyMessage="No AOP data found"
+          columns={[
+            { key: 'bu_name', label: 'Business Unit', render: (row) => <span className="font-medium">{row.bu_name} ({row.bu_short_name})</span> },
+            { key: 'department_name', label: 'Department' },
+            { key: 'max_headcount', label: 'Max Headcount', render: (row) => (
+              editingId === row.id ? (
+                <input type="number" value={editValue} onChange={e => setEditValue(e.target.value)}
+                  onBlur={() => handleInlineEdit(row.id)} onKeyDown={e => e.key === 'Enter' && handleInlineEdit(row.id)}
+                  className="input-field w-20" autoFocus />
+              ) : (
+                <span className="font-semibold cursor-pointer hover:text-indigo-600" onClick={() => { setEditingId(row.id); setEditValue(row.max_headcount); }}>{row.max_headcount}</span>
+              )
+            )},
+            { key: 'current_headcount', label: 'Current', render: (row) => row.current_headcount || 0 },
+            { key: 'remaining', label: 'Remaining', render: (row) => {
+              const remaining = row.max_headcount - parseInt(row.current_headcount || 0);
+              return <span className={`badge ${remaining >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{remaining}</span>;
+            }},
+            { key: 'fiscal_year', label: 'Year' },
+            { key: 'actions', label: 'Actions', sortable: false, filterable: false, render: (row) => (
+              <button onClick={async () => { await aopAPI.delete(row.id); toast.success('Deleted'); loadData(); }} className="text-sm text-red-600 hover:text-red-800 font-medium">Delete</button>
+            )},
+          ]}
+        />
+      )}
 
       {/* Create Modal */}
       {modalOpen && (

@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { interviewsAPI, mastersAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import AppModal from '../components/AppModal';
+import DataTable from '../components/DataTable';
 import { formatDateTime, toDatetimeLocalValue } from '../utils/dateTime';
 
 const STATUS_COLORS = {
@@ -443,115 +444,50 @@ export default function InterviewerPage() {
 
       {/* Table */}
       {loading ? (
-        <div className="flex justify-center py-16">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-        </div>
-      ) : filteredInterviews.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">No interviews found.</div>
+        <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-indigo-600" /></div>
       ) : (
-        <div className="bg-white rounded-xl shadow overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                {['Candidate', 'Job & Round', 'Schedule', 'Queue', 'Next Step', 'Actions'].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredInterviews.map((iv) => (
-                <tr
-                  key={iv.id || iv._id}
-                  className={`hover:bg-gray-50 ${focusedApplicationId && String(iv.application_record_id) === String(focusedApplicationId) ? 'bg-indigo-50/50' : ''}`}
-                >
-                  <td className="px-4 py-3">
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">{iv.candidate_name || iv.application?.candidate_name || '-'}</p>
-                      <p className="text-xs text-gray-500 mt-1">{iv.candidate_email || '-'}</p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    <div className="space-y-1">
-                      <p className="font-medium text-gray-800">{iv.job_title || iv.application?.job_title || '-'}</p>
-                      <p className="text-xs text-gray-500">Round {iv.round || iv.round_number || '-'}</p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    <div className="space-y-1">
-                      <p>{formatDate(iv.scheduled_at || iv.scheduled_datetime)}</p>
-                      {iv.suggested_interview_datetime1 && (
-                        <p className="text-xs text-indigo-600">Suggested: {formatDate(iv.suggested_interview_datetime1)}</p>
-                      )}
-                      {iv.suggested_interview_datetime2 && (
-                        <p className="text-xs text-indigo-600">Suggested: {formatDate(iv.suggested_interview_datetime2)}</p>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="space-y-1">
-                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_COLORS[iv.status] || 'bg-gray-100 text-gray-600'}`}>
-                        {iv.status?.replace(/_/g, ' ') || '-'}
-                      </span>
-                      {iv.app_status && (
-                        <div>
-                          <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700">
-                            {iv.app_status}
-                          </span>
-                        </div>
-                      )}
-                      {iv.calendar_sync_status && (
-                        <div>
-                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-medium capitalize ${CALENDAR_SYNC_COLORS[iv.calendar_sync_status] || 'bg-gray-100 text-gray-600'}`}>
-                            {iv.calendar_sync_status.replace(/_/g, ' ')}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="text-sm text-gray-600 max-w-xs">{getNextStep(iv)}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2 flex-wrap">
-                      {iv.meeting_join_url && (
-                        <a
-                          href={iv.meeting_join_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs px-2.5 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium"
-                        >
-                          Join Teams
-                        </a>
-                      )}
-                      <button
-                        onClick={() => navigate(`/interviews/${iv.id || iv._id}/workspace`)}
-                        className="text-xs px-2.5 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-medium"
-                      >
-                        Open Workspace
-                      </button>
-                      {canCoordinate && (iv.app_status === 'AwaitingInterviewScheduling' || ['Round1', 'Round2', 'Round3'].includes(iv.app_status) || iv.scheduled_datetime) && (
-                        <button
-                          onClick={() => navigate(`/applications/${iv.application_record_id}/schedule`)}
-                          className="text-xs px-2.5 py-1 rounded bg-amber-50 text-amber-600 hover:bg-amber-100 font-medium"
-                        >
-                          Scheduling
-                        </button>
-                      )}
-                      {canCoordinate && iv.job_record_id && (
-                        <button
-                          onClick={() => navigate(`/jobs/${iv.job_record_id}`)}
-                          className="text-xs px-2.5 py-1 rounded bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 font-medium"
-                        >
-                          Open Job Workflow
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          title="Interview Hub"
+          data={filteredInterviews}
+          exportFileName="interviews"
+          emptyMessage="No interviews found."
+          onRowClick={(row) => navigate(`/interviews/${row.id || row._id}/workspace`)}
+          columns={[
+            { key: 'candidate_name', label: 'Candidate', render: (row) => (
+              <div>
+                <p className="font-medium text-gray-800">{row.candidate_name || row.application?.candidate_name || '-'}</p>
+                <p className="text-xs text-gray-500">{row.candidate_email || '-'}</p>
+              </div>
+            )},
+            { key: 'job_title', label: 'Job & Round', render: (row) => (
+              <div>
+                <p className="font-medium text-gray-800">{row.job_title || row.application?.job_title || '-'}</p>
+                <p className="text-xs text-gray-500">Round {row.round || row.round_number || '-'}</p>
+              </div>
+            )},
+            { key: 'scheduled_datetime', label: 'Schedule', render: (row) => (
+              <div className="space-y-1">
+                <p>{formatDate(row.scheduled_at || row.scheduled_datetime)}</p>
+                {row.suggested_interview_datetime1 && <p className="text-xs text-indigo-600">Slot 1: {formatDate(row.suggested_interview_datetime1)}</p>}
+                {row.suggested_interview_datetime2 && <p className="text-xs text-indigo-600">Slot 2: {formatDate(row.suggested_interview_datetime2)}</p>}
+              </div>
+            )},
+            { key: 'status', label: 'Status', render: (row) => (
+              <div className="space-y-1">
+                <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_COLORS[row.status] || 'bg-gray-100 text-gray-600'}`}>{row.status?.replace(/_/g, ' ') || '-'}</span>
+                {row.app_status && <span className="block px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700 w-fit">{row.app_status}</span>}
+              </div>
+            )},
+            { key: 'next_step', label: 'Next Step', render: (row) => <p className="text-gray-600 max-w-xs">{getNextStep(row)}</p> },
+            { key: 'actions', label: 'Actions', sortable: false, filterable: false, render: (row) => (
+              <div className="flex gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
+                {row.meeting_join_url && <a href={row.meeting_join_url} target="_blank" rel="noreferrer" className="text-xs px-2.5 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium">Teams</a>}
+                <button onClick={() => navigate(`/interviews/${row.id || row._id}/workspace`)} className="text-xs px-2.5 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-medium">Workspace</button>
+                {canCoordinate && row.application_record_id && <button onClick={() => navigate(`/applications/${row.application_record_id}/schedule`)} className="text-xs px-2.5 py-1 rounded bg-amber-50 text-amber-600 hover:bg-amber-100 font-medium">Schedule</button>}
+              </div>
+            )},
+          ]}
+        />
       )}
 
       {/* Feedback Modal */}

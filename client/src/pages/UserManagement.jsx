@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { usersAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import DataTable from '../components/DataTable';
 
 const ROLES = [
   { value: 'hr_admin', label: 'HR Admin', color: 'bg-purple-100 text-purple-700' },
@@ -106,51 +107,28 @@ export default function UserManagement() {
       </div>
 
       {/* Table */}
-      <div className="table-container">
-        <table className="w-full">
-          <thead><tr className="table-header">
-            <th className="px-4 py-3">Name</th>
-            <th className="px-4 py-3">Email</th>
-            <th className="px-4 py-3">Role</th>
-            <th className="px-4 py-3">Status</th>
-            <th className="px-4 py-3">Created</th>
-            <th className="px-4 py-3">Actions</th>
-          </tr></thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400">Loading...</td></tr>
-            ) : users.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400">No users found</td></tr>
-            ) : users.map(u => (
-              <tr key={u.id} className="table-row">
-                <td className="px-4 py-3 font-medium text-sm text-gray-900">{u.name || '-'}</td>
-                <td className="px-4 py-3 text-sm text-gray-600">{u.email}</td>
-                <td className="px-4 py-3"><span className={`badge ${getRoleInfo(u.role).color}`}>{getRoleInfo(u.role).label}</span></td>
-                <td className="px-4 py-3"><span className={`badge ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{u.is_active ? 'Active' : 'Inactive'}</span></td>
-                <td className="px-4 py-3 text-sm text-gray-500">{new Date(u.created_at).toLocaleDateString()}</td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-2">
-                    <button onClick={() => openEdit(u)} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">Edit</button>
-                    {!u.is_default && (
-                      <button onClick={() => setDeleteModal(u)} className="text-sm text-red-600 hover:text-red-800 font-medium">Delete</button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4">
-          <p className="text-sm text-gray-500">Page {page} of {totalPages}</p>
-          <div className="flex gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
-            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="btn-secondary disabled:opacity-50">Next</button>
-          </div>
-        </div>
+      {loading ? (
+        <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-indigo-600" /></div>
+      ) : (
+        <DataTable
+          title="Users"
+          data={users}
+          exportFileName="users"
+          emptyMessage="No users found"
+          columns={[
+            { key: 'name', label: 'Name', render: (row) => <span className="font-medium text-gray-900">{row.name || '-'}</span> },
+            { key: 'email', label: 'Email' },
+            { key: 'role', label: 'Role', render: (row) => <span className={`badge ${getRoleInfo(row.role).color}`}>{getRoleInfo(row.role).label}</span> },
+            { key: 'is_active', label: 'Status', render: (row) => <span className={`badge ${row.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{row.is_active ? 'Active' : 'Inactive'}</span> },
+            { key: 'created_at', label: 'Created', render: (row) => <span className="text-gray-500">{new Date(row.created_at).toLocaleDateString()}</span> },
+            { key: 'actions', label: 'Actions', sortable: false, filterable: false, render: (row) => (
+              <div className="flex gap-2">
+                <button onClick={() => openEdit(row)} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">Edit</button>
+                {!row.is_default && <button onClick={() => setDeleteModal(row)} className="text-sm text-red-600 hover:text-red-800 font-medium">Delete</button>}
+              </div>
+            )},
+          ]}
+        />
       )}
 
       {/* Create/Edit Modal */}

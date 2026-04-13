@@ -202,153 +202,47 @@ export default function Jobs() {
       </div>
 
       {/* Table */}
-      <div className="table-container">
-        <table className="w-full">
-          <thead>
-            <tr className="table-header">
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase cursor-pointer select-none" onClick={() => handleSort('job_id')}>
-                Job ID <SortIcon field="job_id" />
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Job Title</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
-              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Positions</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Recruiter</th>
-              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Applications</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase cursor-pointer select-none" onClick={() => handleSort('created_at')}>
-                Posted <SortIcon field="created_at" />
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {loading ? (
-              <tr>
-                <td colSpan={8} className="px-4 py-16 text-center">
-                  <div className="flex items-center justify-center gap-2 text-gray-400">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div>
-                    Loading jobs...
-                  </div>
-                </td>
-              </tr>
-            ) : jobs.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-4 py-16 text-center text-gray-400">
-                  <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 13.255A23.193 23.193 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-                  No jobs found. {hasActiveFilters ? 'Try adjusting your filters.' : 'Create your first job to get started.'}
-                </td>
-              </tr>
-            ) : jobs.map(job => (
-              <tr
-                key={job.id}
-                className="table-row cursor-pointer hover:bg-gray-50 transition-colors"
-                onClick={() => navigate(`/jobs/${job.id}`)}
-              >
-                <td className="px-4 py-3 text-sm font-mono text-indigo-600 font-medium">{job.job_id || '-'}</td>
-                <td className="px-4 py-3">
-                  <div className="text-sm font-medium text-gray-900">
-                    {job.priority && <span className="text-red-500 mr-1" title="High Priority">&#9679;</span>}
-                    {job.job_title || '-'}
-                  </div>
-                  {(job.bu_name || job.department_name || job.location_name) && (
-                    <div className="text-xs text-gray-400 mt-0.5">
-                      [job.bu_name, job.location_name, job.phase_name, job.department_name, job.sub_department_name].filter(Boolean).join(' - ')
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[job.status] || 'bg-gray-100 text-gray-700'}`}>
-                    {(job.status || 'draft').replace('_', ' ')}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-sm text-center font-semibold text-gray-700">
-                  {job.filled_positions != null && job.total_positions != null
-                    ? `${job.filled_positions}/${job.total_positions}`
-                    : job.total_positions || job.number_of_positions || 0}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600">{job.recruiter_email?.split('@')[0] || '-'}</td>
-                <td className="px-4 py-3 text-sm text-center font-medium text-gray-700">{job.application_count ?? '-'}</td>
-                <td className="px-4 py-3 text-sm text-gray-500">
-                  {job.created_at ? new Date(job.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
-                </td>
-                <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => navigate(`/jobs/${job.id}`)}
-                      className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
-                    >
-                      View
-                    </button>
-                    <button
-                      onClick={() => navigate(`/jobs/${job.id}/edit`)}
-                      className="text-sm text-gray-600 hover:text-gray-800 font-medium"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={(e) => handleArchive(e, job)}
-                      className="text-sm text-red-500 hover:text-red-700 font-medium"
-                    >
-                      Archive
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4">
-          <p className="text-sm text-gray-500">
-            Showing {(page - 1) * 20 + 1}-{Math.min(page * 20, total)} of {total} jobs
-          </p>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setPage(1)}
-              disabled={page === 1}
-              className="btn-secondary px-2 py-1 text-xs disabled:opacity-40"
-            >
-              First
-            </button>
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="btn-secondary disabled:opacity-40"
-            >
-              Previous
-            </button>
-            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-              const start = Math.max(1, Math.min(page - 2, totalPages - 4));
-              const p = start + i;
-              if (p > totalPages) return null;
-              return (
-                <button
-                  key={p}
-                  onClick={() => setPage(p)}
-                  className={`px-3 py-1.5 text-sm rounded-lg font-medium ${p === page ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
-                >
-                  {p}
-                </button>
-              );
-            })}
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="btn-secondary disabled:opacity-40"
-            >
-              Next
-            </button>
-            <button
-              onClick={() => setPage(totalPages)}
-              disabled={page === totalPages}
-              className="btn-secondary px-2 py-1 text-xs disabled:opacity-40"
-            >
-              Last
-            </button>
-          </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-indigo-600" />
         </div>
+      ) : (
+        <DataTable
+          title="Jobs"
+          data={jobs}
+          exportFileName="jobs"
+          emptyMessage={hasActiveFilters ? 'No jobs match your filters.' : 'No jobs yet. Create your first job to get started.'}
+          onRowClick={(row) => navigate(`/jobs/${row.id}`)}
+          columns={[
+            { key: 'job_id', label: 'Job ID', render: (row) => <span className="font-mono text-indigo-600 font-medium">{row.job_id || '-'}</span> },
+            { key: 'job_title', label: 'Job Title', render: (row) => (
+              <div>
+                <span className="font-medium text-gray-900">{row.priority ? <span className="text-red-500 mr-1">&#9679;</span> : null}{row.job_title || '-'}</span>
+                {(row.bu_name || row.department_name) && <p className="text-xs text-gray-400 mt-0.5">{[row.bu_name, row.location_name, row.department_name].filter(Boolean).join(' · ')}</p>}
+              </div>
+            )},
+            { key: 'status', label: 'Status', render: (row) => (
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[row.status] || 'bg-gray-100 text-gray-700'}`}>
+                {(row.status || 'draft').replace('_', ' ')}
+              </span>
+            )},
+            { key: 'total_positions', label: 'Positions', render: (row) => (
+              <span className="font-semibold text-gray-700">
+                {row.filled_positions != null && row.total_positions != null ? `${row.filled_positions}/${row.total_positions}` : row.total_positions || row.number_of_positions || 0}
+              </span>
+            )},
+            { key: 'recruiter_email', label: 'Recruiter', render: (row) => <span className="text-gray-600">{row.recruiter_email?.split('@')[0] || '-'}</span> },
+            { key: 'application_count', label: 'Applications', render: (row) => <span className="font-medium">{row.application_count ?? '-'}</span> },
+            { key: 'created_at', label: 'Posted', render: (row) => <span className="text-gray-500">{row.created_at ? new Date(row.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</span> },
+            { key: 'actions', label: 'Actions', sortable: false, filterable: false, render: (row) => (
+              <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+                <button onClick={() => navigate(`/jobs/${row.id}`)} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">View</button>
+                <button onClick={() => navigate(`/jobs/${row.id}/edit`)} className="text-sm text-gray-600 hover:text-gray-800 font-medium">Edit</button>
+                <button onClick={(e) => handleArchive(e, row)} className="text-sm text-red-500 hover:text-red-700 font-medium">Archive</button>
+              </div>
+            )},
+          ]}
+        />
       )}
     </div>
   );

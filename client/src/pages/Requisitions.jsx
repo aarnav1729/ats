@@ -178,100 +178,51 @@ export default function Requisitions() {
       </div>
 
       {/* Table */}
-      <div className="table-container">
-        <table className="w-full">
-          <thead><tr className="table-header">
-            <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('requisition_id')}>Req ID<SortIcon field="requisition_id" /></th>
-            <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('job_title')}>Job Title<SortIcon field="job_title" /></th>
-            <th className="px-4 py-3">Department</th>
-            <th className="px-4 py-3">BU</th>
-            <th className="px-4 py-3">Type</th>
-            <th className="px-4 py-3">Positions</th>
-            {showRecruitmentMetrics && <th className="px-4 py-3">Time Since Raised</th>}
-            <th className="px-4 py-3 cursor-pointer" onClick={() => handleSort('status')}>Status<SortIcon field="status" /></th>
-            <th className="px-4 py-3">Assigned Recruiter</th>
-            <th className="px-4 py-3">Created By</th>
-            <th className="px-4 py-3">Actions</th>
-          </tr></thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={columnCount} className="px-4 py-12 text-center text-gray-400">Loading...</td></tr>
-            ) : requisitions.length === 0 ? (
-              <tr><td colSpan={columnCount} className="px-4 py-12 text-center text-gray-400">No requisitions found</td></tr>
-            ) : requisitions.map(req => (
-              <tr key={req.id} className="table-row">
-                <td className="px-4 py-3 text-sm font-mono font-medium text-indigo-600">
-                  {['hr_admin', 'hr_recruiter', 'hod'].includes(user?.role) ? (
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/requisitions/${req.id}`)}
-                      className="text-indigo-600 hover:text-indigo-800 hover:underline"
-                    >
-                      {req.requisition_id}
-                    </button>
-                  ) : (
-                    req.requisition_id
-                  )}
-                </td>
-                <td className="px-4 py-3 text-sm font-medium">
-                  {req.priority && <span className="text-red-500 mr-1" title="Priority">{'\u25CF'}</span>}
-                  {req.job_title || '-'}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600">{req.department_name || '-'}</td>
-                <td className="px-4 py-3 text-sm text-gray-600">{req.bu_name || '-'}</td>
-                <td className="px-4 py-3"><span className="badge bg-indigo-100 text-indigo-700">{req.requisition_type === 'new_hire' ? 'New Hire' : req.requisition_type === 'backfill' ? 'Replacement' : req.requisition_type === 'both' ? 'New Hire, Replacement' : '-'}</span></td>
-                <td className="px-4 py-3 text-sm font-semibold text-center">{req.total_positions || 0}</td>
-                {showRecruitmentMetrics && <td className="px-4 py-3 text-sm text-gray-600">{formatTimeSinceRaised(req.created_at)}</td>}
-                <td className="px-4 py-3">
-                  <div className="space-y-1">
-                    <span className={`badge ${STATUS_COLORS[req.status] || 'bg-gray-100 text-gray-700'}`}>{statusLabel(req.status)}</span>
-                    {req.pending_approver_emails?.length > 0 && (
-                      <p className="text-[11px] text-gray-500">
-                        Pending with {req.pending_approver_emails.length} approver{req.pending_approver_emails.length === 1 ? '' : 's'}
-                      </p>
-                    )}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600">
-                  {req.assigned_recruiter_name
-                    ? `${req.assigned_recruiter_name} (${req.assigned_recruiter_email})`
-                    : req.assigned_recruiter_email || (req.status === 'approved' ? 'HR Admin' : '-')}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-500">{req.created_by?.split('@')[0]}</td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-2">
-                    <button onClick={() => navigate(`/requisitions/${req.id}/edit`)} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">Edit</button>
-                    {req.status === 'pending_cxo_approval' && req.pending_approver_emails?.map(normalizeEmail).includes(normalizeEmail(user?.email)) && (
-                      <>
-                        <button onClick={() => handleApprove(req)} className="text-sm text-emerald-600 hover:text-emerald-800 font-medium">Approve</button>
-                        <button onClick={() => handleReject(req)} className="text-sm text-amber-600 hover:text-amber-800 font-medium">Reject</button>
-                      </>
-                    )}
-                    {user?.role === 'hr_admin' && ['pending_hr_admin_approval', 'pending_approval'].includes(req.status) && (
-                      <>
-                        <button onClick={() => handleApprove(req)} className="text-sm text-emerald-600 hover:text-emerald-800 font-medium">Approve</button>
-                        <button onClick={() => handleReject(req)} className="text-sm text-amber-600 hover:text-amber-800 font-medium">Reject</button>
-                      </>
-                    )}
-                    {user?.role === 'hr_admin' && (
-                      <button onClick={() => handleDelete(req.id)} className="text-sm text-red-600 hover:text-red-800 font-medium">Delete</button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4">
-          <p className="text-sm text-gray-500">Page {page} of {totalPages}</p>
-          <div className="flex gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
-            <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page === totalPages} className="btn-secondary disabled:opacity-50">Next</button>
-          </div>
-        </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-16"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-indigo-600" /></div>
+      ) : (
+        <DataTable
+          title="Requisitions"
+          data={requisitions}
+          exportFileName="requisitions"
+          emptyMessage="No requisitions found"
+          onRowClick={(row) => navigate(`/requisitions/${row.id}`)}
+          columns={[
+            { key: 'requisition_id', label: 'Req ID', render: (row) => <span className="font-mono text-indigo-600 font-medium">{row.requisition_id}</span> },
+            { key: 'job_title', label: 'Job Title', render: (row) => <span className="font-medium">{row.priority ? <span className="text-red-500 mr-1">{'\u25CF'}</span> : null}{row.job_title || '-'}</span> },
+            { key: 'department_name', label: 'Department' },
+            { key: 'bu_name', label: 'BU' },
+            { key: 'requisition_type', label: 'Type', render: (row) => <span className="badge bg-indigo-100 text-indigo-700">{row.requisition_type === 'new_hire' ? 'New Hire' : row.requisition_type === 'backfill' ? 'Replacement' : row.requisition_type === 'both' ? 'New + Replace' : '-'}</span> },
+            { key: 'total_positions', label: 'Positions', render: (row) => <span className="font-semibold">{row.total_positions || 0}</span> },
+            ...(showRecruitmentMetrics ? [{ key: 'created_at_age', label: 'Age', render: (row) => formatTimeSinceRaised(row.created_at) }] : []),
+            { key: 'status', label: 'Status', render: (row) => (
+              <div className="space-y-1">
+                <span className={`badge ${STATUS_COLORS[row.status] || 'bg-gray-100 text-gray-700'}`}>{statusLabel(row.status)}</span>
+                {row.pending_approver_emails?.length > 0 && <p className="text-[11px] text-gray-500">Pending: {row.pending_approver_emails.length}</p>}
+              </div>
+            )},
+            { key: 'assigned_recruiter_email', label: 'Recruiter', render: (row) => <span className="text-gray-600">{row.assigned_recruiter_name ? `${row.assigned_recruiter_name}` : row.assigned_recruiter_email || '-'}</span> },
+            { key: 'created_by', label: 'Created By', render: (row) => <span className="text-gray-500">{row.created_by?.split('@')[0]}</span> },
+            { key: 'actions', label: 'Actions', sortable: false, filterable: false, render: (row) => (
+              <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+                <button onClick={() => navigate(`/requisitions/${row.id}/edit`)} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">Edit</button>
+                {row.status === 'pending_cxo_approval' && row.pending_approver_emails?.map(normalizeEmail).includes(normalizeEmail(user?.email)) && (
+                  <>
+                    <button onClick={() => handleApprove(row)} className="text-sm text-emerald-600 font-medium">Approve</button>
+                    <button onClick={() => handleReject(row)} className="text-sm text-amber-600 font-medium">Reject</button>
+                  </>
+                )}
+                {user?.role === 'hr_admin' && ['pending_hr_admin_approval', 'pending_approval'].includes(row.status) && (
+                  <>
+                    <button onClick={() => handleApprove(row)} className="text-sm text-emerald-600 font-medium">Approve</button>
+                    <button onClick={() => handleReject(row)} className="text-sm text-amber-600 font-medium">Reject</button>
+                  </>
+                )}
+                {user?.role === 'hr_admin' && <button onClick={() => handleDelete(row.id)} className="text-sm text-red-600 font-medium">Delete</button>}
+              </div>
+            )},
+          ]}
+        />
       )}
     </div>
   );
