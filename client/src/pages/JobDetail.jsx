@@ -943,7 +943,7 @@ export default function JobDetail() {
               </div>
             </div>
 
-            <div className="app-modal-body">
+            <div className="app-modal-body overflow-y-auto" style={{ maxHeight: 'calc(90vh - 120px)' }}>
               {candidateDetailLoading ? (
                 <div className="flex items-center justify-center py-16">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
