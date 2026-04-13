@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ATS Express Server",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["index.js"],
+      "port": 3001,
+      "cwd": "server"
+    },
+    {
+      "name": "ATS React Client (Vite)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--port", "5173"],
+      "port": 5173,
+      "cwd": "client"
+    }
+  ]
+}

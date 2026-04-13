@@ -1,0 +1,251 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { mastersAPI } from '../services/api';
+
+function normalizeItems(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (!item) return null;
+        if (typeof item === 'string') {
+          return { label: item, email: item, source: 'manual' };
+        }
+        return {
+          label: item.label || item.employee_name || item.employee_email || item.email,
+          email: item.email || item.employee_email || '',
+          employee_id: item.employee_id || null,
+          designation: item.designation || null,
+          source: item.source || 'spot',
+        };
+      })
+      .filter((item) => item?.email);
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((email) => ({ label: email, email, source: 'manual' }));
+  }
+
+  return [];
+}
+
+function uniqByEmail(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const email = String(item?.email || '').trim().toLowerCase();
+    if (!email || seen.has(email)) return false;
+    seen.add(email);
+    return true;
+  });
+}
+
+function isEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
+function SuggestionRow({ item, onSelect }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item)}
+      className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left hover:bg-indigo-50"
+    >
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold text-gray-900">{item.employee_name || item.label || item.email}</p>
+        <p className="truncate text-xs text-gray-500">{item.employee_email || item.email}</p>
+      </div>
+      <div className="shrink-0 text-right">
+        {item.designation && <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">{item.designation}</p>}
+        {item.department_name && <p className="text-xs text-gray-500">{item.department_name}</p>}
+      </div>
+    </button>
+  );
+}
+
+export default function EmailAutocompleteTags({
+  value,
+  onChange,
+  placeholder = 'Search employee by name or add an external email',
+  helperText,
+  disabled = false,
+}) {
+  const wrapperRef = useRef(null);
+  const inputRef = useRef(null);
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState([]);
+  const selected = useMemo(() => uniqByEmail(normalizeItems(value)), [value]);
+
+  useEffect(() => {
+    if (disabled) return undefined;
+    if (!query.trim()) {
+      setResults([]);
+      return undefined;
+    }
+
+    const timeout = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await mastersAPI.employees({ search: query.trim() });
+        const items = res.data?.items || res.data?.data || res.data || [];
+        setResults(items);
+      } catch {
+        setResults([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 220);
+
+    return () => clearTimeout(timeout);
+  }, [disabled, query]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const emitChange = (items) => {
+    onChange?.(uniqByEmail(items).map((item) => ({
+      label: item.label || item.employee_name || item.email,
+      email: item.email || item.employee_email,
+      employee_id: item.employee_id || null,
+      designation: item.designation || null,
+      source: item.source || (item.employee_id ? 'spot' : 'manual'),
+    })));
+  };
+
+  const addItem = (candidate) => {
+    const email = String(candidate?.email || candidate?.employee_email || '').trim();
+    if (!email) return;
+    emitChange([
+      ...selected,
+      {
+        label: candidate.employee_name || candidate.label || email,
+        email,
+        employee_id: candidate.employee_id || null,
+        designation: candidate.designation || null,
+        source: candidate.source || (candidate.employee_id ? 'spot' : 'manual'),
+      },
+    ]);
+    setQuery('');
+    setOpen(false);
+    inputRef.current?.focus();
+  };
+
+  const addManualIfPossible = () => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    if (!isEmail(trimmed)) return;
+    addItem({ email: trimmed, label: trimmed, source: 'manual' });
+  };
+
+  const removeItem = (email) => {
+    emitChange(selected.filter((item) => item.email !== email));
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key === 'Enter' || event.key === ',') {
+      event.preventDefault();
+      addManualIfPossible();
+    }
+    if (event.key === 'Backspace' && !query && selected.length) {
+      removeItem(selected[selected.length - 1].email);
+    }
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <div
+        className={`flex min-h-[46px] w-full flex-wrap items-center gap-2 rounded-xl border border-gray-300 bg-white px-3 py-2 shadow-sm transition-all ${
+          open ? 'border-indigo-400 ring-2 ring-indigo-100' : ''
+        } ${disabled ? 'cursor-not-allowed bg-gray-50 opacity-70' : ''}`}
+        onClick={() => {
+          if (disabled) return;
+          inputRef.current?.focus();
+          setOpen(true);
+        }}
+      >
+        {selected.map((item) => (
+          <span
+            key={item.email}
+            className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-sm text-indigo-900"
+          >
+            <span className="max-w-[200px] truncate">
+              {item.label && item.label !== item.email ? `${item.label} · ${item.email}` : item.email}
+            </span>
+            {!disabled && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  removeItem(item.email);
+                }}
+                className="text-indigo-600 hover:text-indigo-800"
+              >
+                ×
+              </button>
+            )}
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          disabled={disabled}
+          onFocus={() => setOpen(true)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setOpen(true);
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={selected.length ? 'Add another interviewer' : placeholder}
+          className="min-w-[220px] flex-1 border-0 bg-transparent p-0 text-sm text-gray-800 outline-none placeholder:text-gray-400"
+        />
+      </div>
+
+      {helperText && <p className="mt-1 text-xs text-gray-500">{helperText}</p>}
+
+      {open && !disabled && (
+        <div className="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
+          <div className="border-b border-gray-100 bg-gray-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+            Search SPOT employees or type an external email and press Enter
+          </div>
+          {loading ? (
+            <div className="px-4 py-6 text-sm text-gray-500">Searching employees...</div>
+          ) : results.length > 0 ? (
+            <div className="max-h-64 overflow-y-auto">
+              {results.map((item) => (
+                <SuggestionRow
+                  key={`${item.employee_id || item.employee_email || item.employee_name}`}
+                  item={item}
+                  onSelect={(selectedItem) => addItem({
+                    label: selectedItem.employee_name,
+                    email: selectedItem.employee_email,
+                    employee_id: selectedItem.employee_id,
+                    designation: selectedItem.designation,
+                    source: 'spot',
+                  })}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="px-4 py-5 text-sm text-gray-500">
+              {query.trim() && isEmail(query.trim())
+                ? 'Press Enter to add this external email.'
+                : 'Start typing a name or email to search SPOT EMP.'}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
