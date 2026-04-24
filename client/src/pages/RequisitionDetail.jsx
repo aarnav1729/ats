@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { requisitionsAPI, usersAPI } from '../services/api';
+import { requisitionsAPI, usersAPI, requisitionHoldsAPI } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
+import Timeline from '../components/Timeline';
 
 const STATUS_COLORS = {
   draft: 'bg-gray-100 text-gray-700',
@@ -47,6 +48,8 @@ export default function RequisitionDetail() {
   const [recruiters, setRecruiters] = useState([]);
   const [selectedRecruiterEmail, setSelectedRecruiterEmail] = useState('');
   const [assigningRecruiter, setAssigningRecruiter] = useState(false);
+  const [holdHistory, setHoldHistory] = useState([]);
+  const [holdBusy, setHoldBusy] = useState(false);
 
   useEffect(() => {
     const loadRequisition = async () => {
@@ -72,6 +75,44 @@ export default function RequisitionDetail() {
       .then((res) => setRecruiters(res.data?.users || []))
       .catch(() => setRecruiters([]));
   }, [user?.role]);
+
+  useEffect(() => {
+    if (!id) return;
+    requisitionHoldsAPI.history(id)
+      .then((res) => setHoldHistory(res.data?.holds || []))
+      .catch(() => setHoldHistory([]));
+  }, [id, requisition?.on_hold]);
+
+  const handlePlaceHold = async () => {
+    const reason = window.prompt('Reason for placing this requisition on hold:', '');
+    if (!reason || !reason.trim()) return;
+    setHoldBusy(true);
+    try {
+      await requisitionHoldsAPI.place(id, { reason: reason.trim() });
+      const refreshed = await requisitionsAPI.get(id);
+      setRequisition(refreshed.data);
+      toast.success('Requisition placed on hold');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to place on hold');
+    } finally {
+      setHoldBusy(false);
+    }
+  };
+
+  const handleReleaseHold = async () => {
+    if (!window.confirm('Release this requisition from hold and resume TAT?')) return;
+    setHoldBusy(true);
+    try {
+      await requisitionHoldsAPI.release(id);
+      const refreshed = await requisitionsAPI.get(id);
+      setRequisition(refreshed.data);
+      toast.success('Hold released · TAT resumed');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to release hold');
+    } finally {
+      setHoldBusy(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -152,13 +193,36 @@ export default function RequisitionDetail() {
             </span>
           </div>
         </div>
-        <button
-          onClick={() => navigate(`/requisitions/${requisition.id}/edit`)}
-          className="btn-secondary"
-        >
-          Edit Requisition
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => navigate(`/requisitions/${requisition.id}/edit`)}
+            className="btn-secondary"
+          >
+            Edit Requisition
+          </button>
+          {user?.role === 'hr_admin' && requisition.status === 'approved' && (
+            requisition.on_hold ? (
+              <button onClick={handleReleaseHold} disabled={holdBusy} className="btn-primary disabled:opacity-50">
+                {holdBusy ? 'Releasing…' : 'Release Hold'}
+              </button>
+            ) : (
+              <button onClick={handlePlaceHold} disabled={holdBusy} className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+                {holdBusy ? 'Holding…' : 'Place on Hold'}
+              </button>
+            )
+          )}
+        </div>
       </div>
+
+      {requisition.on_hold && (
+        <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-semibold text-amber-900">Requisition is currently on hold</p>
+          {requisition.hold_reason && (
+            <p className="mt-1 text-sm text-amber-800">Reason: {requisition.hold_reason}</p>
+          )}
+          <p className="mt-1 text-xs text-amber-700">TAT is paused. Cumulative hold: {Math.round((requisition.cumulative_hold_seconds || 0) / 86400 * 100) / 100} days.</p>
+        </div>
+      )}
 
       {canAssignRecruiter && (
         <div className="mb-6 rounded-[28px] border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/70 to-sky-50 p-5 shadow-sm">
@@ -287,6 +351,33 @@ export default function RequisitionDetail() {
               <p className="text-sm text-gray-500">No position rows found.</p>
             )}
           </div>
+        </div>
+
+        {holdHistory.length > 0 && (
+          <div className="card">
+            <h2 className="section-title mb-4">Hold History</h2>
+            <div className="space-y-2">
+              {holdHistory.map((h) => (
+                <div key={h.id} className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-gray-900 break-words">{h.reason || 'No reason given'}</p>
+                    <span className={`badge ${h.released_at ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {h.released_at ? 'Released' : 'Active'}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Placed {formatDate(h.placed_at, true)} by {h.placed_by}
+                    {h.released_at && ` · Released ${formatDate(h.released_at, true)} by ${h.released_by}`}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="card">
+          <h2 className="section-title mb-4">Timeline & TAT</h2>
+          <Timeline entityType="requisition" entityId={requisition.id} />
         </div>
 
         <div className="card">

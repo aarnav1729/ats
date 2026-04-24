@@ -48,22 +48,26 @@ async function createInAppNotification({ to, title, message = null, link = null 
   }
 }
 
-export async function sendEmail(to, subject, htmlBody) {
+export async function sendEmail(to, subject, htmlBody, { cc = [] } = {}) {
   try {
     const token = await getToken();
+    const toList = Array.isArray(to) ? to : [to];
+    const ccList = Array.isArray(cc) ? cc : cc ? [cc] : [];
+    const message = {
+      subject,
+      body: { contentType: 'HTML', content: wrapInTemplate(subject, htmlBody) },
+      toRecipients: toList.filter(Boolean).map((a) => ({ emailAddress: { address: a } })),
+    };
+    if (ccList.length) {
+      message.ccRecipients = ccList.filter(Boolean).map((a) => ({ emailAddress: { address: a } }));
+    }
     const res = await fetch(`https://graph.microsoft.com/v1.0/users/${GRAPH.senderEmail}/sendMail`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        message: {
-          subject,
-          body: { contentType: 'HTML', content: wrapInTemplate(subject, htmlBody) },
-          toRecipients: [{ emailAddress: { address: to } }],
-        },
-      }),
+      body: JSON.stringify({ message }),
     });
     if (!res.ok) {
       const err = await res.text();
@@ -75,6 +79,24 @@ export async function sendEmail(to, subject, htmlBody) {
     console.error('Email send error:', err.message);
     return false;
   }
+}
+
+export async function sendCustomEmail({ to, cc = [], subject, htmlBody, sentBy, contextType, contextId }, dbPool) {
+  const toList = Array.isArray(to) ? to : [to];
+  const ccList = Array.isArray(cc) ? cc : cc ? [cc] : [];
+  const result = await sendEmail(toList, subject, htmlBody, { cc: ccList });
+  if (dbPool && sentBy) {
+    try {
+      await dbPool.query(
+        `INSERT INTO email_log (sent_by, to_addresses, cc_addresses, subject, body_html, context_type, context_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [sentBy, JSON.stringify(toList), JSON.stringify(ccList), subject, htmlBody, contextType || null, contextId || null]
+      );
+    } catch (err) {
+      console.error('Email log error:', err.message);
+    }
+  }
+  return result;
 }
 
 function wrapInTemplate(title, body) {

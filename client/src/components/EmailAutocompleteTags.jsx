@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { mastersAPI } from '../services/api';
+import haptic from '../utils/haptic';
 
 function normalizeItems(value) {
   if (Array.isArray(value)) {
@@ -50,11 +51,11 @@ function SuggestionRow({ item, onSelect }) {
     <button
       type="button"
       onClick={() => onSelect(item)}
-      className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left hover:bg-indigo-50"
+      className="interactive-card flex w-full items-start justify-between gap-3 rounded-2xl px-3 py-3 text-left"
     >
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-gray-900">{item.employee_name || item.label || item.email}</p>
-        <p className="truncate text-xs text-gray-500">{item.employee_email || item.email}</p>
+        <p className="text-sm font-semibold text-gray-900 break-words">{item.employee_name || item.label || item.email}</p>
+        <p className="text-xs text-gray-500 break-all">{item.employee_email || item.email}</p>
       </div>
       <div className="shrink-0 text-right">
         {item.designation && <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">{item.designation}</p>}
@@ -70,6 +71,7 @@ export default function EmailAutocompleteTags({
   placeholder = 'Search employee by name or add an external email',
   helperText,
   disabled = false,
+  max = null,
 }) {
   const wrapperRef = useRef(null);
   const inputRef = useRef(null);
@@ -126,16 +128,20 @@ export default function EmailAutocompleteTags({
   const addItem = (candidate) => {
     const email = String(candidate?.email || candidate?.employee_email || '').trim();
     if (!email) return;
-    emitChange([
-      ...selected,
-      {
-        label: candidate.employee_name || candidate.label || email,
-        email,
-        employee_id: candidate.employee_id || null,
-        designation: candidate.designation || null,
-        source: candidate.source || (candidate.employee_id ? 'spot' : 'manual'),
-      },
-    ]);
+    const nextItem = {
+      label: candidate.employee_name || candidate.label || email,
+      email,
+      employee_id: candidate.employee_id || null,
+      designation: candidate.designation || null,
+      source: candidate.source || (candidate.employee_id ? 'spot' : 'manual'),
+    };
+    if (max === 1) {
+      emitChange([nextItem]);
+    } else {
+      if (typeof max === 'number' && selected.length >= max) return;
+      emitChange([...selected, nextItem]);
+    }
+    haptic.light();
     setQuery('');
     setOpen(false);
     inputRef.current?.focus();
@@ -149,6 +155,7 @@ export default function EmailAutocompleteTags({
   };
 
   const removeItem = (email) => {
+    haptic.light();
     emitChange(selected.filter((item) => item.email !== email));
   };
 
@@ -165,21 +172,24 @@ export default function EmailAutocompleteTags({
   return (
     <div ref={wrapperRef} className="relative">
       <div
-        className={`flex min-h-[46px] w-full flex-wrap items-center gap-2 rounded-xl border border-gray-300 bg-white px-3 py-2 shadow-sm transition-all ${
-          open ? 'border-indigo-400 ring-2 ring-indigo-100' : ''
+        className={`flex min-h-[52px] w-full flex-wrap items-center gap-2 rounded-[24px] border px-3.5 py-2.5 shadow-[0_16px_32px_-30px_rgba(15,23,42,0.2)] transition-all ${
+          open
+            ? 'border-[rgba(82,103,255,0.28)] bg-white ring-4 ring-[rgba(82,103,255,0.08)]'
+            : 'border-[rgba(29,33,41,0.1)] bg-[rgba(248,250,252,0.92)]'
         } ${disabled ? 'cursor-not-allowed bg-gray-50 opacity-70' : ''}`}
         onClick={() => {
           if (disabled) return;
           inputRef.current?.focus();
           setOpen(true);
+          haptic.light();
         }}
       >
         {selected.map((item) => (
           <span
             key={item.email}
-            className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-sm text-indigo-900"
+            className="inline-flex max-w-full items-center gap-2 rounded-full border border-[rgba(82,103,255,0.16)] bg-[rgba(82,103,255,0.08)] px-3 py-1.5 text-sm text-slate-900"
           >
-            <span className="max-w-[200px] truncate">
+            <span className="max-w-full break-all">
               {item.label && item.label !== item.email ? `${item.label} · ${item.email}` : item.email}
             </span>
             {!disabled && (
@@ -189,7 +199,7 @@ export default function EmailAutocompleteTags({
                   event.stopPropagation();
                   removeItem(item.email);
                 }}
-                className="text-indigo-600 hover:text-indigo-800"
+                className="text-slate-500 transition-colors hover:text-slate-900"
               >
                 ×
               </button>
@@ -207,7 +217,7 @@ export default function EmailAutocompleteTags({
             setOpen(true);
           }}
           onKeyDown={handleKeyDown}
-          placeholder={selected.length ? 'Add another interviewer' : placeholder}
+          placeholder={(typeof max === 'number' && selected.length >= max) ? 'Selection limit reached' : (selected.length ? 'Add another interviewer' : placeholder)}
           className="min-w-[220px] flex-1 border-0 bg-transparent p-0 text-sm text-gray-800 outline-none placeholder:text-gray-400"
         />
       </div>
@@ -215,14 +225,14 @@ export default function EmailAutocompleteTags({
       {helperText && <p className="mt-1 text-xs text-gray-500">{helperText}</p>}
 
       {open && !disabled && (
-        <div className="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
-          <div className="border-b border-gray-100 bg-gray-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+        <div className="absolute left-0 right-0 top-full z-40 mt-3 overflow-hidden rounded-[26px] border border-[rgba(29,33,41,0.08)] bg-white shadow-[0_28px_60px_-36px_rgba(15,23,42,0.32)]">
+          <div className="border-b border-[rgba(29,33,41,0.06)] bg-[rgba(248,250,252,0.96)] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
             Search SPOT employees or type an external email and press Enter
           </div>
           {loading ? (
             <div className="px-4 py-6 text-sm text-gray-500">Searching employees...</div>
           ) : results.length > 0 ? (
-            <div className="max-h-64 overflow-y-auto">
+            <div className="max-h-64 overflow-y-auto p-2">
               {results.map((item) => (
                 <SuggestionRow
                   key={`${item.employee_id || item.employee_email || item.employee_name}`}

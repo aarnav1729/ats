@@ -25,7 +25,7 @@ export function requisitionNeedsCxoApproval(payload = {}) {
   return ['new_hire', 'both'].includes(payload.requisition_type);
 }
 
-export function resolveSubmissionStatus({ requestedStatus, existingStatus, requiresCxo, userRole }) {
+export function resolveSubmissionStatus({ requestedStatus, existingStatus, requiresCxo, hasCxoApprovers, userRole }) {
   if (requestedStatus && !['draft', 'pending_approval', 'pending_cxo_approval', 'pending_hr_admin_approval'].includes(requestedStatus)) {
     throw new Error('Only draft or approval-pending statuses can be saved from the requisition form');
   }
@@ -41,7 +41,12 @@ export function resolveSubmissionStatus({ requestedStatus, existingStatus, requi
     return 'draft';
   }
 
-  return requiresCxo ? 'pending_cxo_approval' : 'pending_hr_admin_approval';
+  // If requires CXO but no actual CXO approvers (self-approval case or backfill-only),
+  // go directly to HR admin approval
+  if (requiresCxo && hasCxoApprovers) {
+    return 'pending_cxo_approval';
+  }
+  return 'pending_hr_admin_approval';
 }
 
 export async function getActiveHrAdmins(client) {
@@ -101,17 +106,25 @@ function subDepartmentMatches(scopeValues, subDepartmentName) {
 export async function matchCxoApprovers(client, { requisitionerEmail }) {
   if (!requisitionerEmail) return [];
 
+  const normalizedRequisitioner = String(requisitionerEmail || '').trim().toLowerCase();
+
   const result = await client.query(
     `SELECT *
      FROM approvers_master
      WHERE active_flag = true
        AND LOWER(requisitioner_email) = LOWER($1)
      ORDER BY cxo_name ASC, cxo_email ASC`,
-    [String(requisitionerEmail || '').trim()]
+    [normalizedRequisitioner]
   );
 
   return result.rows
-    .filter((row) => row.cxo_email)
+    .filter((row) => {
+      if (!row.cxo_email) return false;
+      // Skip self-approval: if the CXO approver IS the requisitioner, skip them
+      // and let it go directly to HR admin
+      const cxoEmail = String(row.cxo_email || '').trim().toLowerCase();
+      return cxoEmail !== normalizedRequisitioner;
+    })
     .map((row) => ({
       employee_email: row.cxo_email,
       employee_name: row.cxo_name,
@@ -123,10 +136,28 @@ export async function matchCxoApprovers(client, { requisitionerEmail }) {
     }));
 }
 
+/**
+ * Check if a given email is allowed to create requisitions based on the approvers_master table.
+ * This enables CXO-level users listed in the approvers master to also create requisitions.
+ */
+export async function isEmailInApproversList(client, email) {
+  if (!email) return false;
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const result = await client.query(
+    `SELECT 1 FROM approvers_master
+     WHERE active_flag = true
+       AND (LOWER(requisitioner_email) = $1 OR LOWER(cxo_email) = $1)
+     LIMIT 1`,
+    [normalizedEmail]
+  );
+  return result.rows.length > 0;
+}
+
 export function buildApprovalRoute({ requiresCxo, cxoApprovers = [], hrAdmins = [] }) {
   const route = [];
 
-  if (requiresCxo) {
+  // Only add CXO stage if: requires CXO approval AND there are actual (non-self) CXO approvers
+  if (requiresCxo && cxoApprovers.length > 0) {
     route.push({
       stage: 'cxo',
       label: cxoApprovers.length > 1 ? 'CXO approvals' : 'CXO approval',
@@ -136,7 +167,11 @@ export function buildApprovalRoute({ requiresCxo, cxoApprovers = [], hrAdmins = 
         employee_id: approver.employee_id,
         designation: approver.designation,
       })),
+      note: null,
     });
+  } else if (requiresCxo && cxoApprovers.length === 0) {
+    // Self-approval case: CXO is the requisitioner, skip CXO stage entirely
+    // (goes directly to HR Admin)
   }
 
   route.push({
@@ -154,7 +189,8 @@ export function buildApprovalRoute({ requiresCxo, cxoApprovers = [], hrAdmins = 
 export async function replaceApprovalSteps(client, { requisitionId, requiresCxo, cxoApprovers = [] }) {
   await client.query('DELETE FROM requisition_approvals WHERE requisition_id = $1', [requisitionId]);
 
-  if (requiresCxo) {
+  // Only insert CXO steps if there are actual (non-self) CXO approvers
+  if (requiresCxo && cxoApprovers.length > 0) {
     for (const approver of cxoApprovers) {
       await client.query(
         `INSERT INTO requisition_approvals (
@@ -177,7 +213,7 @@ export async function replaceApprovalSteps(client, { requisitionId, requiresCxo,
         ]
       );
     }
-    return;
+    // Also create HR admin steps (they come after CXO)
   }
 
   const hrAdmins = await getActiveHrAdmins(client);
@@ -191,7 +227,7 @@ export async function replaceApprovalSteps(client, { requisitionId, requiresCxo,
         approver_role,
         sequence_no,
         status
-      ) VALUES ($1, 'hr_admin', $2, $3, 'hr_admin', 1, 'pending')`,
+      ) VALUES ($1, 'hr_admin', $2, $3, 'hr_admin', ${requiresCxo && cxoApprovers.length > 0 ? 2 : 1}, 'pending')`,
       [requisitionId, admin.email.toLowerCase(), admin.name || null]
     );
   }

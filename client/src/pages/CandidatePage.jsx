@@ -219,7 +219,7 @@ export default function CandidatePage() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{STAGE_LABELS[stage] || stage}</p>
+                      <p className="text-sm font-semibold text-gray-900 break-words">{STAGE_LABELS[stage] || stage}</p>
                       <p className="text-xs text-gray-500 mt-0.5">{doneCount}/{stageCount} done</p>
                     </div>
                     {allDone ? (

@@ -238,7 +238,7 @@ export default function BulkUpload() {
   // Results summary view
   if (results) {
     return (
-      <div className="max-w-4xl mx-auto">
+      <div className="page-shell">
         <h1 className="page-title mb-6">Upload Results</h1>
         <div className="card">
           <div className="grid grid-cols-3 gap-4 mb-6">
@@ -272,7 +272,7 @@ export default function BulkUpload() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="page-shell">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="page-title">Bulk Upload Candidates</h1>
@@ -340,8 +340,8 @@ export default function BulkUpload() {
                   <span className="text-sm text-red-600 font-medium">{duplicates.size} duplicate emails detected</span>
                 )}
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="overflow-hidden">
+                <table className="w-full table-fixed text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50">
                       <th className="text-left p-2 font-medium text-gray-600">#</th>

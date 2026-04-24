@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { usersAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import DataTable from '../components/DataTable';
+import { PageHeader, StatusPill } from '../components/ui';
 
 const ROLES = [
-  { value: 'hr_admin', label: 'HR Admin', color: 'bg-purple-100 text-purple-700' },
-  { value: 'hr_recruiter', label: 'HR Recruiter', color: 'bg-blue-100 text-blue-700' },
-  { value: 'interviewer', label: 'Interviewer', color: 'bg-amber-100 text-amber-700' },
-  { value: 'applicant', label: 'Applicant', color: 'bg-green-100 text-green-700' },
-  { value: 'hod', label: 'HOD', color: 'bg-indigo-100 text-indigo-700' },
+  { value: 'hr_admin', label: 'HR Admin', tone: 'purple' },
+  { value: 'hr_recruiter', label: 'HR Recruiter', tone: 'info' },
+  { value: 'interviewer', label: 'Interviewer', tone: 'warning' },
+  { value: 'applicant', label: 'Applicant', tone: 'success' },
+  { value: 'hod', label: 'HOD', tone: 'info' },
 ];
 
 export default function UserManagement() {
@@ -84,31 +85,37 @@ export default function UserManagement() {
     setModalOpen(true);
   };
 
-  const getRoleInfo = (role) => ROLES.find(r => r.value === role) || { label: role, color: 'bg-gray-100 text-gray-700' };
-  const totalPages = Math.ceil(total / 20);
+  const getRoleInfo = (role) => ROLES.find(r => r.value === role) || { label: role, tone: 'neutral' };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="page-title">User Management</h1>
-          <p className="text-sm text-gray-500 mt-1">{total} users total</p>
-        </div>
-        <button onClick={openCreate} className="btn-primary">+ Add User</button>
-      </div>
+    <div className="page-container">
+      <PageHeader
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'User Management' }]}
+        title="User Management"
+        subtitle="Invite colleagues, assign roles, and govern access to the ATS."
+        meta={[{ label: `${total} users` }]}
+        actions={<button onClick={openCreate} className="btn-primary">+ Add User</button>}
+      />
 
-      {/* Filters */}
-      <div className="flex gap-3 mb-4">
-        <input type="text" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name or email..." className="input-field max-w-xs" />
-        <select value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setPage(1); }} className="input-field max-w-[200px]">
-          <option value="">All Roles</option>
+      <div className="flex flex-wrap gap-2.5">
+        <input
+          type="text"
+          value={search}
+          onChange={e => { setSearch(e.target.value); setPage(1); }}
+          placeholder="Search by name or email…"
+          className="input-field"
+          style={{ maxWidth: 280, height: 36 }}
+        />
+        <select value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setPage(1); }} className="input-field" style={{ maxWidth: 200, height: 36 }}>
+          <option value="">All roles</option>
           {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
       </div>
 
-      {/* Table */}
       {loading ? (
-        <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-indigo-600" /></div>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)', padding: 48, display: 'flex', justifyContent: 'center' }}>
+          <div className="animate-spin rounded-full h-6 w-6" style={{ borderBottom: '2px solid var(--accent-blue)' }} />
+        </div>
       ) : (
         <DataTable
           title="Users"
@@ -116,15 +123,17 @@ export default function UserManagement() {
           exportFileName="users"
           emptyMessage="No users found"
           columns={[
-            { key: 'name', label: 'Name', render: (row) => <span className="font-medium text-gray-900">{row.name || '-'}</span> },
+            { key: 'name', label: 'Name', render: (row) => <span style={{ fontWeight: 500, color: 'var(--text-main)' }}>{row.name || '-'}</span> },
             { key: 'email', label: 'Email' },
-            { key: 'role', label: 'Role', render: (row) => <span className={`badge ${getRoleInfo(row.role).color}`}>{getRoleInfo(row.role).label}</span> },
-            { key: 'is_active', label: 'Status', render: (row) => <span className={`badge ${row.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{row.is_active ? 'Active' : 'Inactive'}</span> },
-            { key: 'created_at', label: 'Created', render: (row) => <span className="text-gray-500">{new Date(row.created_at).toLocaleDateString()}</span> },
+            { key: 'role', label: 'Role', render: (row) => <StatusPill tone={getRoleInfo(row.role).tone}>{getRoleInfo(row.role).label}</StatusPill> },
+            { key: 'is_active', label: 'Status', render: (row) => <StatusPill tone={row.is_active ? 'success' : 'danger'}>{row.is_active ? 'Active' : 'Inactive'}</StatusPill> },
+            { key: 'created_at', label: 'Created', render: (row) => <span style={{ color: 'var(--text-faint)' }}>{new Date(row.created_at).toLocaleDateString()}</span> },
             { key: 'actions', label: 'Actions', sortable: false, filterable: false, render: (row) => (
               <div className="flex gap-2">
-                <button onClick={() => openEdit(row)} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">Edit</button>
-                {!row.is_default && <button onClick={() => setDeleteModal(row)} className="text-sm text-red-600 hover:text-red-800 font-medium">Delete</button>}
+                <button onClick={() => openEdit(row)} className="table-link">Edit</button>
+                {!row.is_default && (
+                  <button onClick={() => setDeleteModal(row)} className="table-link" style={{ color: 'var(--danger-text)' }}>Delete</button>
+                )}
               </div>
             )},
           ]}

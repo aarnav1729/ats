@@ -124,18 +124,18 @@ export default function Notifications() {
         <div className="aurora-content">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-200">Notifications</p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-white">Inbox</h1>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">Notifications</p>
+              <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-slate-950">Inbox</h1>
             </div>
             <div className="flex items-center gap-4">
               <div className="text-center">
-                <p className="text-2xl font-bold text-white">{stats.unread}</p>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-cyan-200">Unread</p>
+                <p className="text-2xl font-bold text-slate-950">{stats.unread}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Unread</p>
               </div>
-              <div className="h-8 w-px bg-white/20" />
+              <div className="h-8 w-px bg-slate-200" />
               <div className="text-center">
-                <p className="text-2xl font-bold text-white">{stats.total}</p>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-white/50">Total</p>
+                <p className="text-2xl font-bold text-slate-950">{stats.total}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Total</p>
               </div>
             </div>
           </div>
@@ -228,11 +228,11 @@ export default function Notifications() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className={`text-sm truncate ${row.read_flag ? 'font-medium text-gray-700' : 'font-semibold text-gray-900'}`}>
+                    <p className={`text-sm break-words ${row.read_flag ? 'font-medium text-gray-700' : 'font-semibold text-gray-900'}`}>
                       {row.title || 'Notification'}
                     </p>
                     {row.message && (
-                      <p className="mt-1 text-sm text-gray-500 line-clamp-2">{row.message}</p>
+                      <p className="mt-1 text-sm text-gray-500 whitespace-normal break-words">{row.message}</p>
                     )}
                   </div>
                   <div className="flex-shrink-0 flex items-center gap-2">

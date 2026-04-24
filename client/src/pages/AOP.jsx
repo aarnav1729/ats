@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { aopAPI, mastersAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import DataTable from '../components/DataTable';
+import { PageHeader, StatCard, StatusPill } from '../components/ui';
 
 export default function AOP() {
   const [data, setData] = useState([]);
@@ -72,30 +73,29 @@ export default function AOP() {
     }
   };
 
+  const remaining = totalProvisioned - totalCurrent;
+
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="page-title">Annual Operating Plan</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage headcount allocation by business unit and department</p>
-        </div>
-        <button onClick={() => setModalOpen(true)} className="btn-primary">+ Add AOP Entry</button>
+    <div className="page-container">
+      <PageHeader
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'AOP' }]}
+        title="Annual Operating Plan"
+        subtitle="Manage headcount allocation by business unit and department."
+        actions={<button onClick={() => setModalOpen(true)} className="btn-primary">+ Add AOP Entry</button>}
+      />
+
+      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px,1fr))' }}>
+        <StatCard label="Total provisioned" value={totalProvisioned} hint="Approved maximum headcount." />
+        <StatCard label="Current headcount" value={totalCurrent} deltaTone="info" hint="Currently filled positions." />
+        <StatCard label="Remaining capacity" value={remaining} deltaTone={remaining >= 0 ? 'success' : 'danger'} hint="Available runway to hire." />
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="card"><p className="text-sm text-gray-500">Total Provisioned</p><p className="text-3xl font-bold text-gray-900 mt-1">{totalProvisioned}</p></div>
-        <div className="card"><p className="text-sm text-gray-500">Current Headcount</p><p className="text-3xl font-bold text-indigo-600 mt-1">{totalCurrent}</p></div>
-        <div className="card"><p className="text-sm text-gray-500">Remaining Capacity</p><p className={`text-3xl font-bold mt-1 ${totalProvisioned - totalCurrent >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{totalProvisioned - totalCurrent}</p></div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex gap-3 mb-4">
-        <select value={buFilter} onChange={e => setBuFilter(e.target.value)} className="input-field max-w-[250px]">
-          <option value="">All Business Units</option>
+      <div className="flex flex-wrap gap-2.5">
+        <select value={buFilter} onChange={e => setBuFilter(e.target.value)} className="input-field" style={{ maxWidth: 260, height: 36 }}>
+          <option value="">All business units</option>
           {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.bu_name}</option>)}
         </select>
-        <select value={yearFilter} onChange={e => setYearFilter(e.target.value)} className="input-field max-w-[150px]">
+        <select value={yearFilter} onChange={e => setYearFilter(e.target.value)} className="input-field" style={{ maxWidth: 140, height: 36 }}>
           {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
         </select>
       </div>
@@ -123,12 +123,12 @@ export default function AOP() {
             )},
             { key: 'current_headcount', label: 'Current', render: (row) => row.current_headcount || 0 },
             { key: 'remaining', label: 'Remaining', render: (row) => {
-              const remaining = row.max_headcount - parseInt(row.current_headcount || 0);
-              return <span className={`badge ${remaining >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{remaining}</span>;
+              const rem = row.max_headcount - parseInt(row.current_headcount || 0);
+              return <StatusPill tone={rem >= 0 ? 'success' : 'danger'}>{rem}</StatusPill>;
             }},
             { key: 'fiscal_year', label: 'Year' },
             { key: 'actions', label: 'Actions', sortable: false, filterable: false, render: (row) => (
-              <button onClick={async () => { await aopAPI.delete(row.id); toast.success('Deleted'); loadData(); }} className="text-sm text-red-600 hover:text-red-800 font-medium">Delete</button>
+              <button onClick={async () => { await aopAPI.delete(row.id); toast.success('Deleted'); loadData(); }} className="table-link" style={{ color: 'var(--danger-text)' }}>Delete</button>
             )},
           ]}
         />

@@ -25,6 +25,26 @@ function uniqueEmails(items = []) {
   )];
 }
 
+function normalizeSuggestedInterviewers(value = []) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      const roundNumber = Number(item?.round_number || item?.roundNumber || 0);
+      const interviewers = uniqueEmails(item?.interviewers || item?.emails || []);
+      if (!roundNumber || interviewers.length === 0) return null;
+      return { round_number: roundNumber, interviewers };
+    })
+    .filter(Boolean);
+}
+
+function formatSuggestedInterviewersText(suggestions = []) {
+  if (!suggestions.length) return '';
+  return suggestions
+    .map((item) => `Round ${item.round_number}: ${item.interviewers.join(', ')}`)
+    .join('\n');
+}
+
 async function getRoundInterviewContext(interviewId) {
   const interviewResult = await pool.query('SELECT * FROM interview_feedback WHERE id = $1', [interviewId]);
   if (interviewResult.rows.length === 0) return null;
@@ -569,6 +589,7 @@ router.put('/:id/request-additional-rounds', adminOrInterviewer, async (req, res
   try {
     const additionalRounds = Math.max(1, Number(req.body.additional_rounds || 1));
     const remarks = String(req.body.remarks || '').trim();
+    const suggestedInterviewers = normalizeSuggestedInterviewers(req.body.suggested_interviewers);
     if (!remarks) {
       return res.status(400).json({ error: 'Remarks are required when requesting additional rounds' });
     }
@@ -581,6 +602,12 @@ router.put('/:id/request-additional-rounds', adminOrInterviewer, async (req, res
     if (requestedTotal <= currentRounds) {
       return res.status(400).json({ error: 'This candidate is already configured for the maximum number of rounds' });
     }
+    const suggestedInterviewersText = formatSuggestedInterviewersText(
+      suggestedInterviewers.filter((item) => item.round_number <= requestedTotal)
+    );
+    const storedRemarks = suggestedInterviewersText
+      ? `${remarks}\n\nSuggested interviewers:\n${suggestedInterviewersText}`
+      : remarks;
 
     await pool.query(
       `UPDATE interview_feedback
@@ -590,7 +617,7 @@ router.put('/:id/request-additional-rounds', adminOrInterviewer, async (req, res
            additional_round_request_remarks = $3,
            updated_at = NOW()
        WHERE id = $4`,
-      [requestedTotal - currentRounds, req.user.email, remarks, req.params.id]
+      [requestedTotal - currentRounds, req.user.email, storedRemarks, req.params.id]
     );
 
     await logAudit({
@@ -602,6 +629,7 @@ router.put('/:id/request-additional-rounds', adminOrInterviewer, async (req, res
         requested_additional_rounds: requestedTotal - currentRounds,
         requested_total_rounds: requestedTotal,
         remarks,
+        suggested_interviewers: suggestedInterviewers,
       },
     });
 
@@ -615,11 +643,15 @@ router.put('/:id/request-additional-rounds', adminOrInterviewer, async (req, res
       await sendNotificationEmail(
         email,
         'Additional Interview Round Requested',
-        `<p>${req.user.email} has requested ${requestedTotal - currentRounds} more round(s) for <strong>${application.candidate_name}</strong>.</p><p>Reason: ${remarks}</p><p>Open the candidate workflow to revise the interview plan.</p>`
+        `<p>${req.user.email} has requested ${requestedTotal - currentRounds} more round(s) for <strong>${application.candidate_name}</strong>.</p><p>Reason: ${remarks}</p>${suggestedInterviewersText ? `<p><strong>Suggested interviewers</strong><br />${suggestedInterviewersText.replace(/\n/g, '<br />')}</p>` : ''}<p>Open the candidate workflow to revise the interview plan.</p>`
       ).catch((err) => console.error('Additional round email error:', err.message));
     }
 
-    res.json({ message: 'Additional round request sent', requested_total_rounds: requestedTotal });
+    res.json({
+      message: 'Additional round request sent',
+      requested_total_rounds: requestedTotal,
+      suggested_interviewers: suggestedInterviewers,
+    });
   } catch (err) {
     console.error('Request additional rounds error:', err);
     res.status(500).json({ error: 'Internal server error' });

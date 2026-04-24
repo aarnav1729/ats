@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { applicationsAPI, interviewsAPI } from '../services/api';
 import InfoTip from '../components/InfoTip';
 import EmailComposerModal from '../components/EmailComposerModal';
+import haptic from '../utils/haptic';
 import { getCurrentRoundTask } from '../workflow/applicationWorkflow';
 import { canMarkNoShow, formatDateTime, toDatetimeLocalValue } from '../utils/dateTime';
 
@@ -122,6 +123,7 @@ export default function InterviewSchedule() {
   const confirmSchedule = async () => {
     if (!activeTask?.id) return;
     if (!scheduleForm.datetime) {
+      haptic.warning();
       toast.error('Choose or enter the confirmed interview slot');
       return;
     }
@@ -132,6 +134,7 @@ export default function InterviewSchedule() {
         new_datetime: scheduleForm.datetime,
         reason: scheduleForm.note || 'Scheduled from the dedicated scheduling workspace',
       });
+      haptic.success();
       const sync = res.data?.calendar_sync;
       if (sync?.status === 'synced' || sync?.status === 'synced_fallback') {
         toast.success(sync.message || 'Interview scheduled and Teams invite sent');
@@ -144,6 +147,7 @@ export default function InterviewSchedule() {
       }
       await loadApplication();
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to confirm schedule');
     } finally {
       setSubmitting(false);
@@ -154,6 +158,7 @@ export default function InterviewSchedule() {
     if (!activeTask?.id) return;
     const reason = String(noShowReasons[party] || '').trim();
     if (!reason) {
+      haptic.warning();
       toast.error(`Add a no-show reason for the ${party}`);
       return;
     }
@@ -165,9 +170,11 @@ export default function InterviewSchedule() {
         reason,
       });
       setNoShowReasons((prev) => ({ ...prev, [party]: '' }));
+      haptic.success();
       toast.success('No-show captured');
       await loadApplication();
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to mark no-show');
     } finally {
       setSubmitting(false);
@@ -184,9 +191,11 @@ export default function InterviewSchedule() {
         html_body,
         note: scheduleForm.note,
       });
+      haptic.notify();
       toast.success('Reminder sent');
       setEmailModal(null);
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to send reminder');
     } finally {
       setEmailSending(false);
@@ -204,27 +213,33 @@ export default function InterviewSchedule() {
   return (
     <div className="workspace-shell">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <button onClick={() => navigate(-1)} className="btn-secondary">Back</button>
+        <button onClick={() => { haptic.light(); navigate(-1); }} className="btn-secondary">Back</button>
         <div className="flex flex-wrap gap-2">
           {activeTask?.id && (
-            <button onClick={() => navigate(`/interviews/${activeTask.id}/workspace`)} className="btn-secondary">
+            <button onClick={() => { haptic.light(); navigate(`/interviews/${activeTask.id}/workspace`); }} className="btn-secondary">
               Reviewer Workspace
             </button>
           )}
-          <button onClick={() => navigate(`/applications/${application.id}/workflow`)} className="btn-primary">
+          <button onClick={() => { haptic.light(); navigate(`/applications/${application.id}/workflow`); }} className="btn-primary">
             Candidate Workflow
           </button>
         </div>
       </div>
 
-      <section className="workspace-hero">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <section className="workspace-hero animate-fade-in-up">
+        <div className="grid gap-6 xl:grid-cols-[1.04fr,0.96fr] xl:items-center">
           <div>
-            <p className="workspace-eyebrow">Interview Scheduling</p>
-            <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-gray-950">{application?.candidate_name || 'Schedule Interview'}</h1>
-            <p className="mt-1 text-sm text-gray-500">Round {activeTask?.round_number || 1} &middot; {activeTask?.interviewer_email || 'Panel not assigned'}</p>
+            <div className="utility-strip">
+              <span className="utility-chip">Interview Scheduling</span>
+              <span className="utility-chip">Round {activeTask?.round_number || 1}</span>
+              <span className="utility-chip">{application?.status || 'Stage not available'}</span>
+            </div>
+            <h1 className="page-title mt-4">{application?.candidate_name || 'Schedule Interview'}</h1>
+            <p className="page-subtitle mt-3 max-w-3xl">
+              Lock the final interview slot, keep the panel aligned, and handle reminders or no-show exceptions from one scheduling desk.
+            </p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <QuickStat label="Candidate" value={application?.candidate_name || '-'} detail={application?.candidate_email || ''} />
             <QuickStat label="Round" value={`Round ${activeTask?.round_number || 1}`} detail={activeTask?.interviewer_email || 'Panel scheduling'} />
             <QuickStat label="Candidate Stage" value={application?.status || '-'} detail={suggestedSlots.length ? `${suggestedSlots.length} suggested slot(s)` : 'Waiting for reviewer slots'} />
@@ -233,8 +248,9 @@ export default function InterviewSchedule() {
         </div>
       </section>
 
-      <div className="space-y-6">
-          <section className="workspace-card">
+      <div className="workspace-grid">
+        <div className="workspace-main">
+          <section className="workspace-card panel-hover">
             <div className="flex items-center gap-2">
               <h2 className="section-title">Suggested interview slots</h2>
               <InfoTip text="The HOD or assigned interviewer proposes the starting options. Recruiters confirm with the candidate and then lock the final meeting time from here." />
@@ -247,11 +263,11 @@ export default function InterviewSchedule() {
                   <button
                     key={`${slot}-${index}`}
                     type="button"
-                    onClick={() => useSuggestedSlot(slot)}
+                    onClick={() => { haptic.light(); useSuggestedSlot(slot); }}
                     className={`interactive-card rounded-[28px] border px-5 py-5 text-left ${
                       selected
-                        ? 'border-indigo-300 bg-indigo-50'
-                        : 'border-gray-200 bg-gray-50 hover:border-indigo-200 hover:bg-indigo-50/60'
+                        ? 'border-[rgba(82,103,255,0.28)] bg-[rgba(82,103,255,0.08)]'
+                        : 'border-[rgba(29,33,41,0.08)] bg-[rgba(248,250,252,0.92)]'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -271,155 +287,162 @@ export default function InterviewSchedule() {
             </div>
           </section>
 
-          <section className="workspace-card">
+          <section className="workspace-card panel-hover">
             <div className="flex items-center gap-2">
               <h2 className="section-title">Final confirmation</h2>
               <InfoTip text="Once this is confirmed, the ATS updates the candidate stage and attempts Microsoft calendar plus Teams sync for the candidate, recruiter, and interview panel." />
             </div>
-            <div className="mt-5 grid gap-5 xl:grid-cols-[0.95fr,1.05fr]">
-              <div className="space-y-4">
-                <div>
-                  {slotOptions.length > 0 ? (
-                    <div className="mb-4">
-                      <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900">
-                        Pick from suggested slots
-                        <InfoTip text="Choosing a reviewer-suggested slot fills the final confirmation field below. You can still override it manually if the candidate confirms a different time." />
-                      </label>
-                      <select
-                        value={scheduleForm.source_slot}
-                        onChange={(event) => {
-                          const option = slotOptions.find((item) => item.key === event.target.value);
-                          if (!option) {
-                            setScheduleForm((prev) => ({ ...prev, source_slot: '' }));
-                            return;
-                          }
-                          setScheduleForm((prev) => ({
-                            ...prev,
-                            source_slot: option.key,
-                            datetime: option.value,
-                            note: prev.note || 'Confirmed from recruiter-approved suggested slot.',
-                          }));
-                        }}
-                        className="input-field"
-                      >
-                        <option value="">Select a suggested slot</option>
-                        {slotOptions.map((option) => (
-                          <option key={option.key} value={option.key}>{option.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : null}
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">Confirmed interview date and time</label>
-                  <input
-                    type="datetime-local"
-                    value={scheduleForm.datetime}
-                    onChange={(event) => setScheduleForm((prev) => ({ ...prev, datetime: event.target.value, source_slot: '' }))}
-                    className="input-field"
-                  />
-                  <p className="mt-2 text-sm font-medium text-indigo-700">{selectedDatetimePreview}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">Recruiter note</label>
-                  <textarea
-                    rows={5}
-                    value={scheduleForm.note}
-                    onChange={(event) => setScheduleForm((prev) => ({ ...prev, note: event.target.value }))}
-                    className="input-field"
-                    placeholder="Capture the final candidate confirmation, panel coordination note, or any exception that matters."
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={confirmSchedule} disabled={submitting} className="btn-primary w-full disabled:opacity-50">
-                    {submitting ? 'Scheduling...' : 'Confirm Schedule & Trigger Teams Invite'}
-                  </button>
-                  <InfoTip text="The final slot drives the candidate stage, the calendar attempt, and the reminder context shown below." />
-                </div>
+            <div className="mt-5 space-y-4">
+              <div>
+                {slotOptions.length > 0 ? (
+                  <div className="mb-4">
+                    <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900">
+                      Pick from suggested slots
+                      <InfoTip text="Choosing a reviewer-suggested slot fills the final confirmation field below. You can still override it manually if the candidate confirms a different time." />
+                    </label>
+                    <select
+                      value={scheduleForm.source_slot}
+                      onChange={(event) => {
+                        const option = slotOptions.find((item) => item.key === event.target.value);
+                        if (!option) {
+                          setScheduleForm((prev) => ({ ...prev, source_slot: '' }));
+                          return;
+                        }
+                        haptic.light();
+                        setScheduleForm((prev) => ({
+                          ...prev,
+                          source_slot: option.key,
+                          datetime: option.value,
+                          note: prev.note || 'Confirmed from recruiter-approved suggested slot.',
+                        }));
+                      }}
+                      className="input-field"
+                    >
+                      <option value="">Select a suggested slot</option>
+                      {slotOptions.map((option) => (
+                        <option key={option.key} value={option.key}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+                <label className="block text-sm font-semibold text-gray-900 mb-2">Confirmed interview date and time</label>
+                <input
+                  type="datetime-local"
+                  value={scheduleForm.datetime}
+                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, datetime: event.target.value, source_slot: '' }))}
+                  className="input-field"
+                />
+                <p className="mt-2 text-sm font-medium text-indigo-700">{selectedDatetimePreview}</p>
               </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">Recruiter note</label>
+                <textarea
+                  rows={5}
+                  value={scheduleForm.note}
+                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, note: event.target.value }))}
+                  className="input-field"
+                  placeholder="Capture the final candidate confirmation, panel coordination note, or any exception that matters."
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={confirmSchedule} disabled={submitting} className="btn-primary w-full disabled:opacity-50">
+                  {submitting ? 'Scheduling...' : 'Confirm Schedule & Trigger Teams Invite'}
+                </button>
+                <InfoTip text="The final slot drives the candidate stage, the calendar attempt, and the reminder context shown below." />
+              </div>
+            </div>
+          </section>
+        </div>
 
-              <div className="rounded-[28px] border border-gray-200 bg-gray-50 p-5">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-gray-900">Meeting recipients</h3>
-                  <InfoTip text="The ATS schedules from the configured SPOT mailbox and includes the candidate, recruiter, secondary recruiter when present, and the round panel." />
-                </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div className="surface-muted">
-                    <p className="workspace-kicker">Candidate</p>
-                    <p className="mt-2 text-sm text-gray-800">{application?.candidate_email || '-'}</p>
-                  </div>
-                  <div className="surface-muted">
-                    <p className="workspace-kicker">Recruiter</p>
-                    <p className="mt-2 text-sm text-gray-800">{application?.recruiter_email || '-'}</p>
-                  </div>
-                  <div className="surface-muted sm:col-span-2">
-                    <p className="workspace-kicker">Panel</p>
-                    <p className="mt-2 text-sm text-gray-800">{panelMembers.length ? panelMembers.join(', ') : 'No panel members assigned yet'}</p>
-                  </div>
-                  <div className="surface-muted sm:col-span-2">
-                    <p className="workspace-kicker">Teams / calendar</p>
-                    {activeTask?.meeting_join_url ? (
-                      <a href={activeTask.meeting_join_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-sm font-semibold text-indigo-700 hover:text-indigo-900">
-                        Open latest Teams meeting
-                      </a>
-                    ) : (
-                      <p className="mt-2 text-sm text-gray-500">The meeting link appears here after Microsoft sync completes.</p>
-                    )}
-                  </div>
-                </div>
+        <aside className="workspace-rail">
+          <section className="focus-panel">
+            <div className="flex items-center gap-2">
+              <h2 className="section-title">Coordination Summary</h2>
+              <InfoTip text="The ATS schedules from the configured SPOT mailbox and includes the candidate, recruiter, secondary recruiter when present, and the round panel." />
+            </div>
+            <div className="mt-5 fact-grid">
+              <div className="fact-card">
+                <p className="workspace-kicker">Candidate</p>
+                <p className="mt-2 text-sm text-gray-800">{application?.candidate_email || '-'}</p>
+              </div>
+              <div className="fact-card">
+                <p className="workspace-kicker">Recruiter</p>
+                <p className="mt-2 text-sm text-gray-800">{application?.recruiter_email || '-'}</p>
+              </div>
+              <div className="fact-card">
+                <p className="workspace-kicker">Panel</p>
+                <p className="mt-2 text-sm text-gray-800">{panelMembers.length ? panelMembers.join(', ') : 'No panel members assigned yet'}</p>
+              </div>
+              <div className="fact-card">
+                <p className="workspace-kicker">Teams / calendar</p>
+                {activeTask?.meeting_join_url ? (
+                  <a href={activeTask.meeting_join_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-sm font-semibold text-indigo-700 hover:text-indigo-900">
+                    Open latest Teams meeting
+                  </a>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-500">The meeting link appears here after Microsoft sync completes.</p>
+                )}
               </div>
             </div>
           </section>
 
-          <section className="workspace-card">
+          <section className="workspace-card panel-hover">
             <div className="flex items-center gap-2">
               <h2 className="section-title">Reminders and exceptions</h2>
               <InfoTip text="Use AI-assisted reminder drafting when you need a polished communication instead of a generic nudge. No-show capture stays blocked until the interview time actually starts or passes." />
             </div>
-            <div className="mt-5 grid gap-5 xl:grid-cols-[0.9fr,1.1fr]">
+            <div className="mt-5 space-y-5">
               <div className="space-y-3">
                 <button
                   type="button"
-                  onClick={() => setEmailModal({
-                    recipientType: 'candidate',
-                    recipients: [application?.candidate_email].filter(Boolean),
-                    title: 'Draft Candidate Reminder',
-                    subtitle: 'Ask AI to draft a polished reminder for the candidate, then edit and send it from this workflow.',
-                    purpose: 'interview',
-                    context: {
-                      candidate_name: application?.candidate_name,
-                      job_title: application?.job_title,
-                      recruiter_email: application?.recruiter_email,
-                      round_number: activeTask?.round_number,
-                    },
-                    defaultPrompt: `Draft a concise but polished reminder to ${application?.candidate_name || 'the candidate'} about the scheduled interview for ${application?.job_title || 'the current role'}. Mention the confirmed slot and ask them to be ready a few minutes early.`,
-                  })}
+                  onClick={() => {
+                    haptic.light();
+                    setEmailModal({
+                      recipientType: 'candidate',
+                      recipients: [application?.candidate_email].filter(Boolean),
+                      title: 'Draft Candidate Reminder',
+                      subtitle: 'Ask AI to draft a polished reminder for the candidate, then edit and send it from this workflow.',
+                      purpose: 'interview',
+                      context: {
+                        candidate_name: application?.candidate_name,
+                        job_title: application?.job_title,
+                        recruiter_email: application?.recruiter_email,
+                        round_number: activeTask?.round_number,
+                      },
+                      defaultPrompt: `Draft a concise but polished reminder to ${application?.candidate_name || 'the candidate'} about the scheduled interview for ${application?.job_title || 'the current role'}. Mention the confirmed slot and ask them to be ready a few minutes early.`,
+                    });
+                  }}
                   className="btn-secondary w-full justify-center"
                 >
                   Compose Candidate Reminder
                 </button>
                 <button
                   type="button"
-                  onClick={() => setEmailModal({
-                    recipientType: 'panel',
-                    recipients: panelMembers,
-                    title: 'Draft Panel Reminder',
-                    subtitle: 'Create a recruiter-grade reminder for the interviewer panel using the ATS context.',
-                    purpose: 'interview',
-                    context: {
-                      candidate_name: application?.candidate_name,
-                      job_title: application?.job_title,
-                      recruiter_email: application?.recruiter_email,
-                      round_number: activeTask?.round_number,
-                    },
-                    defaultPrompt: `Draft a crisp interviewer reminder for the panel about the upcoming Round ${activeTask?.round_number || 1} interview with ${application?.candidate_name || 'the candidate'}, including the role context and a request to join on time.`,
-                  })}
+                  onClick={() => {
+                    haptic.light();
+                    setEmailModal({
+                      recipientType: 'panel',
+                      recipients: panelMembers,
+                      title: 'Draft Panel Reminder',
+                      subtitle: 'Create a recruiter-grade reminder for the interviewer panel using the ATS context.',
+                      purpose: 'interview',
+                      context: {
+                        candidate_name: application?.candidate_name,
+                        job_title: application?.job_title,
+                        recruiter_email: application?.recruiter_email,
+                        round_number: activeTask?.round_number,
+                      },
+                      defaultPrompt: `Draft a crisp interviewer reminder for the panel about the upcoming Round ${activeTask?.round_number || 1} interview with ${application?.candidate_name || 'the candidate'}, including the role context and a request to join on time.`,
+                    });
+                  }}
                   className="btn-secondary w-full justify-center"
                 >
                   Compose Panel Reminder
                 </button>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className={`rounded-[28px] border p-5 ${noShowEnabled ? 'border-red-200 bg-red-50/80' : 'border-gray-200 bg-gray-50'}`}>
+              <div className="grid gap-4">
+                <div className={`decision-card ${noShowEnabled ? 'decision-card-warn' : ''}`}>
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-semibold text-gray-900">Candidate no-show</h3>
                     <InfoTip text="This stays disabled until the interview slot has actually started or passed, so the ATS does not record no-shows prematurely." />
@@ -444,7 +467,7 @@ export default function InterviewSchedule() {
                   </button>
                 </div>
 
-                <div className={`rounded-[28px] border p-5 ${noShowEnabled ? 'border-amber-200 bg-amber-50/80' : 'border-gray-200 bg-gray-50'}`}>
+                <div className={`decision-card ${noShowEnabled ? 'decision-card-warn' : ''}`}>
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-semibold text-gray-900">Panel no-show</h3>
                     <InfoTip text="Use this only if the panel or interviewer missed the confirmed slot after it started. The ATS routes the record back into scheduling without dropping context." />
@@ -471,6 +494,7 @@ export default function InterviewSchedule() {
               </div>
             </div>
           </section>
+        </aside>
       </div>
 
       <EmailComposerModal

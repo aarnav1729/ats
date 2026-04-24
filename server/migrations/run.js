@@ -589,6 +589,102 @@ export async function ensureSchema() {
 
     -- Add secondary_recruiter_email to applications if not exists
     ALTER TABLE applications ADD COLUMN IF NOT EXISTS secondary_recruiter_email VARCHAR(255);
+
+    -- Candidate profile enhancements
+    ALTER TABLE applications ADD COLUMN IF NOT EXISTS dob DATE;
+    ALTER TABLE applications ADD COLUMN IF NOT EXISTS uploaded_by VARCHAR(255);
+    ALTER TABLE applications ADD COLUMN IF NOT EXISTS is_duplicate BOOLEAN DEFAULT false;
+    ALTER TABLE applications ADD COLUMN IF NOT EXISTS duplicate_of_id INTEGER REFERENCES applications(id);
+
+    -- Email log for configurable email sends
+    CREATE TABLE IF NOT EXISTS email_log (
+      id SERIAL PRIMARY KEY,
+      sent_by VARCHAR(255) NOT NULL,
+      to_addresses JSONB NOT NULL DEFAULT '[]',
+      cc_addresses JSONB NOT NULL DEFAULT '[]',
+      subject TEXT NOT NULL,
+      body_html TEXT,
+      context_type VARCHAR(100),
+      context_id VARCHAR(255),
+      sent_at TIMESTAMP DEFAULT NOW()
+    );
+
+    -- Universal timeline events: every meaningful action on any entity
+    -- (requisition, job, application, clearance, document, offer, hold).
+    -- Powers detail-page timelines and TAT-per-step analytics on MIS.
+    CREATE TABLE IF NOT EXISTS timeline_events (
+      id BIGSERIAL PRIMARY KEY,
+      entity_type VARCHAR(40) NOT NULL,
+      entity_id VARCHAR(100) NOT NULL,
+      event_type VARCHAR(80) NOT NULL,
+      stage VARCHAR(80),
+      actor_email VARCHAR(255),
+      actor_role VARCHAR(50),
+      summary TEXT,
+      payload JSONB DEFAULT '{}',
+      from_state VARCHAR(80),
+      to_state VARCHAR(80),
+      duration_since_prev_seconds BIGINT,
+      hold_paused BOOLEAN DEFAULT false,
+      occurred_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_timeline_entity ON timeline_events (entity_type, entity_id, occurred_at);
+    CREATE INDEX IF NOT EXISTS idx_timeline_event_type ON timeline_events (event_type, occurred_at);
+
+    -- Requisition holds
+    CREATE TABLE IF NOT EXISTS requisition_holds (
+      id SERIAL PRIMARY KEY,
+      requisition_id INTEGER REFERENCES requisitions(id) ON DELETE CASCADE,
+      reason TEXT NOT NULL,
+      notes TEXT,
+      placed_by VARCHAR(255) NOT NULL,
+      placed_at TIMESTAMP DEFAULT NOW(),
+      released_by VARCHAR(255),
+      released_at TIMESTAMP,
+      notified_emails JSONB DEFAULT '[]'
+    );
+    CREATE INDEX IF NOT EXISTS idx_req_holds_active ON requisition_holds (requisition_id) WHERE released_at IS NULL;
+
+    ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS on_hold BOOLEAN DEFAULT false;
+    ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS hold_reason TEXT;
+    ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS cumulative_hold_seconds BIGINT DEFAULT 0;
+    ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cumulative_hold_seconds BIGINT DEFAULT 0;
+
+    -- Candidate portal linking
+    ALTER TABLE applications ADD COLUMN IF NOT EXISTS portal_user_id INTEGER REFERENCES users(id);
+    ALTER TABLE applications ADD COLUMN IF NOT EXISTS portal_invited_at TIMESTAMP;
+    ALTER TABLE applications ADD COLUMN IF NOT EXISTS portal_first_login_at TIMESTAMP;
+
+    -- Extend candidate_documents for candidate-initiated uploads + versions + review notes
+    ALTER TABLE candidate_documents ADD COLUMN IF NOT EXISTS uploaded_by_email VARCHAR(255);
+    ALTER TABLE candidate_documents ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
+    ALTER TABLE candidate_documents ADD COLUMN IF NOT EXISTS review_notes TEXT;
+    ALTER TABLE candidate_documents ADD COLUMN IF NOT EXISTS kind VARCHAR(40) DEFAULT 'document';
+    ALTER TABLE candidate_documents DROP CONSTRAINT IF EXISTS candidate_documents_stage_check;
+    ALTER TABLE candidate_documents ADD CONSTRAINT candidate_documents_stage_check
+      CHECK (stage IN (
+        'before_offer_release', 'after_offer_release', 'after_offer_acceptance',
+        'before_joining', 'joining_day', 'after_joining',
+        'post_selection', 'ctc_acceptance'
+      ));
+
+    -- Dedicated CTC acceptance requests
+    CREATE TABLE IF NOT EXISTS ctc_acceptance_requests (
+      id SERIAL PRIMARY KEY,
+      application_id INTEGER REFERENCES applications(id) ON DELETE CASCADE,
+      requested_by VARCHAR(255) NOT NULL,
+      requested_at TIMESTAMP DEFAULT NOW(),
+      ctc_snapshot JSONB DEFAULT '{}',
+      ctc_text TEXT,
+      status VARCHAR(40) DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'declined', 'expired', 'renegotiated')),
+      responded_at TIMESTAMP,
+      response_notes TEXT,
+      token VARCHAR(128) UNIQUE
+    );
+    CREATE INDEX IF NOT EXISTS idx_ctc_req_app ON ctc_acceptance_requests (application_id);
+
+    -- Store CTC as formatted text alongside JSON
+    ALTER TABLE candidate_clearance ADD COLUMN IF NOT EXISTS ctc_text TEXT;
   `;
 
   try {

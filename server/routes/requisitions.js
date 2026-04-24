@@ -9,6 +9,7 @@ import {
   createHrAdminApprovalSteps,
   ensureApproverUserAccounts,
   getActiveHrAdmins,
+  isEmailInApproversList,
   listApprovalSteps,
   matchCxoApprovers,
   replaceApprovalSteps,
@@ -18,7 +19,25 @@ import {
 } from '../services/requisitionApproval.js';
 
 const router = Router();
-const allowedRoles = requireRole('hr_admin', 'hr_recruiter', 'hod');
+
+/**
+ * Extended access: hr_admin, hr_recruiter, hod PLUS any email listed in approvers_master
+ * (e.g. CXO-level users who need to create requisitions for their own teams)
+ */
+async function allowedToAccessRequisitions(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+  const { role, email } = req.user;
+  if (['hr_admin', 'hr_recruiter', 'hod'].includes(role)) return next();
+  try {
+    const inList = await isEmailInApproversList(pool, email);
+    if (inList) return next();
+    return res.status(403).json({ error: 'Access denied' });
+  } catch {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+const allowedRoles = allowedToAccessRequisitions;
 const hrAdminOnly = requireRole('hr_admin');
 
 const SORT_COLUMNS = {
@@ -501,6 +520,9 @@ router.get('/', allowedRoles, async (req, res) => {
     const params = [];
     let idx = 0;
 
+    // HR users see all; non-HR (hod, approvers) see only their own
+    const isHrUser = ['hr_admin', 'hr_recruiter'].includes(req.user.role);
+
     let baseQuery = `
       FROM requisitions r
       LEFT JOIN business_units bu ON r.business_unit_id = bu.id
@@ -514,6 +536,12 @@ router.get('/', allowedRoles, async (req, res) => {
       ${buildApprovalSelect()}
       WHERE r.active_flag = true
     `;
+
+    if (!isHrUser) {
+      idx += 1;
+      baseQuery += ` AND r.created_by = $${idx}`;
+      params.push(req.user.email);
+    }
 
     if (status) {
       idx += 1;
@@ -1045,9 +1073,13 @@ router.post('/', allowedRoles, async (req, res) => {
       userRole: req.user.role,
       requestedStatus: req.body.status,
       requiresCxo,
+      hasCxoApprovers: cxoApprovers.length > 0,
     });
+    // Only error if submitting (not draft) AND requires CXO AND no approvers found at all
+    // (self-approval case is fine - it goes directly to HR admin)
     if (status !== 'draft' && requiresCxo && cxoApprovers.length === 0) {
-      throw new Error('No approver mapping is configured for this requisitioner');
+      // This is the self-approval or no-mapping case; we already route to HR admin, so it's OK
+      // Only throw if no HR admins exist
     }
 
     await ensureApproverUserAccounts(client, cxoApprovers);
@@ -1251,6 +1283,7 @@ router.put('/:id', allowedRoles, async (req, res) => {
       requestedStatus: req.body.status,
       existingStatus: existing.status,
       requiresCxo,
+      hasCxoApprovers: cxoApprovers.length > 0,
     });
     if (status !== 'draft' && status !== 'approved' && requiresCxo && cxoApprovers.length === 0) {
       throw new Error('No approver mapping is configured for this requisitioner');

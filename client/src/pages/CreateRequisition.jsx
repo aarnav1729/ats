@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { requisitionsAPI, mastersAPI, aopAPI } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import toast from 'react-hot-toast';
+import haptic from '../utils/haptic';
 
 const STEPS = ['Basic Info', 'Position Details', 'Review & Submit'];
 const JOB_TYPES = ['permanent', 'internship', 'contractual'];
@@ -493,15 +494,22 @@ export default function CreateRequisition() {
 
   const handleNext = () => {
     const error = validateStep(step);
-    if (error) return toast.error(error);
+    if (error) { haptic.warning(); return toast.error(error); }
+    haptic.light();
     setStep((s) => s + 1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleBack = () => setStep((s) => s - 1);
+  const handleBack = () => {
+    haptic.light();
+    setStep((s) => s - 1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const handleSubmit = async (nextStatus) => {
     const error = validateStep(0) || validateStep(1);
-    if (error) return toast.error(error);
+    if (error) { haptic.error(); return toast.error(error); }
+    haptic.medium();
     setSubmitting(true);
     try {
       const payload = { ...form, positions };
@@ -510,6 +518,7 @@ export default function CreateRequisition() {
       }
       if (isEdit) {
         await requisitionsAPI.update(id, payload);
+        haptic.success();
         if (nextStatus === 'draft') {
           toast.success('Requisition saved as draft');
         } else if (nextStatus === 'pending_approval') {
@@ -519,10 +528,12 @@ export default function CreateRequisition() {
         }
       } else {
         await requisitionsAPI.create(payload);
+        haptic.success();
         toast.success(nextStatus === 'pending_approval' ? 'Requisition submitted into approval workflow' : 'Requisition saved as draft');
       }
       navigate('/requisitions');
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to save requisition');
     } finally {
       setSubmitting(false);
@@ -540,21 +551,38 @@ export default function CreateRequisition() {
   // ----- Render Helpers -----
 
   const renderProgressBar = () => (
-    <div className="mb-8">
-      <div className="flex items-center justify-between mb-2">
+    <div className="mb-6">
+      {/* Step indicators */}
+      <div className="flex items-center">
         {STEPS.map((label, i) => (
-          <div key={label} className="flex items-center flex-1">
-            <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold
-              ${i < step ? 'bg-indigo-600 text-white' : i === step ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-500'}`}>
-              {i < step ? 'OK' : i + 1}
+          <div key={label} className="flex items-center flex-1 last:flex-none">
+            <div className="flex flex-col items-center gap-1.5">
+              <div className={`step-dot ${i < step ? 'step-dot-completed' : i === step ? 'step-dot-active' : 'step-dot-pending'}`}>
+                {i < step ? (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                ) : (
+                  <span>{i + 1}</span>
+                )}
+              </div>
+              <span className={`text-[11px] font-semibold whitespace-nowrap hidden sm:block ${i === step ? 'text-indigo-700' : i < step ? 'text-emerald-700' : 'text-gray-400'}`}>
+                {label}
+              </span>
             </div>
-            <span className={`ml-2 text-sm font-medium ${i <= step ? 'text-indigo-600' : 'text-gray-400'}`}>{label}</span>
             {i < STEPS.length - 1 && (
-              <div className={`flex-1 h-0.5 mx-4 ${i < step ? 'bg-indigo-600' : 'bg-gray-200'}`} />
+              <div className={`step-connector mx-2 sm:mx-3 ${i < step ? 'step-connector-completed' : i === step ? 'step-connector-active' : ''}`} />
             )}
           </div>
         ))}
       </div>
+      {/* Mobile step label */}
+      <p className="sm:hidden mt-2 text-sm font-semibold text-indigo-700 text-center">{STEPS[step]}</p>
+      {/* Progress bar */}
+      <div className="progress-bar-track mt-4">
+        <div className="progress-bar-fill" style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
+      </div>
+      <p className="text-xs text-gray-400 mt-1.5">Step {step + 1} of {STEPS.length}</p>
     </div>
   );
 
@@ -579,22 +607,41 @@ export default function CreateRequisition() {
       </div>
 
       {approvalPreview.route?.length > 0 && (
-        <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3">
-          <p className="text-sm font-semibold text-indigo-900">Approval Route Preview</p>
-          <div className="mt-2 space-y-2">
-            {approvalPreview.route.map((step) => (
-              <div key={step.stage} className="rounded-lg bg-white px-3 py-2 text-sm text-gray-700">
-                <span className="font-medium text-gray-900">{step.label}:</span>{' '}
-                {step.approvers?.length
-                  ? step.approvers.map((approver) => approver.name || approver.email).join(', ')
-                  : 'No approver mapped yet'}
+        <div className="rounded-[18px] border border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50 px-4 py-4">
+          <div className="flex items-center gap-2 mb-3">
+            <svg className="w-4 h-4 text-indigo-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+            </svg>
+            <p className="text-sm font-semibold text-indigo-900">Approval Route Preview</p>
+          </div>
+          <div className="space-y-2">
+            {approvalPreview.route.map((routeStep, idx) => (
+              <div key={routeStep.stage} className="flex items-start gap-3 rounded-xl bg-white/80 px-3.5 py-2.5 border border-white shadow-sm">
+                <div className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">
+                  {idx + 1}
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{routeStep.label}</span>
+                  <p className="text-sm text-gray-800 mt-0.5">
+                    {routeStep.approvers?.length
+                      ? routeStep.approvers.map((a) => a.name || a.email).join(', ')
+                      : <span className="text-amber-600">No approver mapped yet</span>}
+                  </p>
+                </div>
               </div>
             ))}
           </div>
           {form.requisition_type.includes('new_hire') && approvalPreview.cxo_approvers?.length === 0 && (
-            <p className="mt-2 text-sm text-amber-700">
-              No approver mapping is configured for this requisitioner in the Approvers master yet.
-            </p>
+            <div className="mt-3 flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 border border-amber-200">
+              <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+              </svg>
+              <span>
+                {form.created_by && form.created_by.toLowerCase() === (approvalPreview.cxo_approvers?.[0]?.email || '').toLowerCase()
+                  ? 'You are the mapped CXO approver — CXO stage is skipped, going directly to HR Admin.'
+                  : 'No CXO approver mapping found for this requisitioner. The requisition will go directly to HR Admin.'}
+              </span>
+            </div>
           )}
         </div>
       )}
@@ -807,8 +854,8 @@ export default function CreateRequisition() {
                 <button type="button" onClick={() => addPositionRow(type)}
                   className="btn-primary text-sm px-3 py-1">+ Add Row</button>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="overflow-hidden">
+                <table className="w-full table-fixed text-sm">
                   <thead className="bg-gray-50 text-gray-600">
                     <tr>
                       <th className="px-3 py-2 text-left">Location</th>
@@ -937,10 +984,19 @@ export default function CreateRequisition() {
   const renderReview = () => (
     <div className="space-y-6">
       {form.status !== 'approved' && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {form.requisition_type.includes('new_hire')
-            ? 'New-position requisitions route to the mapped CXO approver from the Approvers master first, then to HR Admin before they can be converted into jobs.'
-            : 'Replacement-only requisitions route directly to HR Admin before they can be converted into jobs.'}
+        <div className="rounded-[14px] border border-blue-200 bg-blue-50 px-4 py-3">
+          <div className="flex items-start gap-2.5">
+            <svg className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+            </svg>
+            <div className="text-sm text-blue-800">
+              {form.requisition_type.includes('new_hire') && approvalPreview.cxo_approvers?.length > 0
+                ? 'New-hire requisitions require CXO approval first, then HR Admin approval before they can become jobs.'
+                : form.requisition_type.includes('new_hire') && approvalPreview.cxo_approvers?.length === 0
+                  ? 'CXO stage is skipped (self-approval). This will go directly to HR Admin approval.'
+                  : 'Replacement-only requisitions require only HR Admin approval before they can become jobs.'}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1070,29 +1126,71 @@ export default function CreateRequisition() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="page-title">{isEdit ? 'Edit Requisition' : 'Create Requisition'}</h1>
-        <button onClick={() => navigate('/requisitions')} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+    <div className="workspace-shell animate-fade-in-up">
+      <section className="workspace-hero">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p className="workspace-eyebrow">{isEdit ? 'Refine Demand' : 'Create Demand'}</p>
+            <h1 className="page-title mt-3">{isEdit ? 'Edit Requisition' : 'New Requisition'}</h1>
+            <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600">
+              {step === 0 && 'Capture the role, ownership, and hiring intent before it enters the approval lane.'}
+              {step === 1 && 'Lay out positions by type, location, and phase so downstream conversion stays clean.'}
+              {step === 2 && 'Review the request, check routing, and submit a polished requisition package.'}
+            </p>
+            <div className="mt-6 flex flex-wrap gap-2">
+              {STEPS.map((label, index) => (
+                <span
+                  key={label}
+                  className={`glass-chip border-[rgba(29,33,41,0.08)] ${step === index ? 'bg-slate-900 text-white' : 'bg-white/84 text-slate-600'}`}
+                >
+                  {index + 1}. {label}
+                </span>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={() => { haptic.light(); navigate('/requisitions'); }}
+            className="btn-secondary"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            Cancel
+          </button>
+        </div>
+      </section>
+
+      <div className="workspace-card">
+        {renderProgressBar()}
       </div>
 
-      {renderProgressBar()}
-
-      <div className="card">
+      <div className="workspace-card animate-scale-in">
         {step === 0 && renderBasicInfo()}
         {step === 1 && renderPositionDetails()}
         {step === 2 && renderReview()}
 
         {/* Navigation */}
-        <div className="flex items-center justify-between mt-8 pt-6 border-t">
-          <button onClick={handleBack} disabled={step === 0}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors
-              ${step === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:bg-gray-100'}`}>
+        <div className="flex items-center justify-between mt-8 pt-5 border-t border-gray-100">
+          <button
+            onClick={handleBack}
+            disabled={step === 0}
+            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all
+              ${step === 0
+                ? 'text-gray-300 cursor-not-allowed'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+            </svg>
             Back
           </button>
+
           {step < STEPS.length - 1 ? (
-            <button onClick={handleNext} className="btn-primary">
-              {step === 0 ? 'Next: Position Details' : 'Next: Review'}
+            <button onClick={handleNext} className="btn-primary flex items-center gap-1.5">
+              {step === 0 ? 'Position Details' : 'Review & Submit'}
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+              </svg>
             </button>
           ) : (
             <div className="flex items-center gap-3">
@@ -1111,7 +1209,7 @@ export default function CreateRequisition() {
               >
                 {submitting && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />}
                 {form.status === 'approved' && user?.role === 'hr_admin'
-                  ? 'Update Approved Requisition'
+                  ? 'Update Requisition'
                   : 'Submit for Approval'}
               </button>
             </div>

@@ -1,6 +1,69 @@
 import { useState, useEffect, useCallback } from 'react';
 import { auditAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import { PageHeader, StatCard, SectionCard } from '../components/ui';
+
+// HR-friendly field labels (override machine names where needed)
+const FIELD_LABEL = {
+  status: 'Status',
+  assigned_recruiter_email: 'Assigned recruiter',
+  secondary_recruiter_email: 'Secondary recruiter',
+  recruiter_email: 'Recruiter',
+  job_title: 'Job title',
+  total_positions: 'Positions',
+  current_approval_stage: 'Approval stage',
+  approved_at: 'Approved at',
+  approved_by: 'Approved by',
+  dropout_reason: 'Dropout reason',
+  rejection_reason: 'Rejection reason',
+  hr_action: 'HR decision',
+  cxo_action: 'CXO decision',
+  joining_date: 'Joining date',
+  ban_scope: 'Ban scope',
+  banned_flag: 'Banned',
+};
+const ACTION_VERB = {
+  create: 'created',
+  update: 'updated',
+  delete: 'deleted',
+  approve: 'approved',
+  reject: 'rejected',
+  reminder: 'sent a reminder on',
+  message: 'messaged',
+  schedule: 'scheduled',
+  upload: 'uploaded a file for',
+  read: 'viewed',
+};
+function prettyValue(val) {
+  if (val === null || val === undefined || val === '') return '—';
+  if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+  if (typeof val === 'object') {
+    try {
+      const keys = Object.keys(val);
+      if (keys.length <= 3) return keys.map((k) => `${k}: ${prettyValue(val[k])}`).join(', ');
+      return `${keys.length} fields`;
+    } catch { return '—'; }
+  }
+  const s = String(val);
+  if (s.length > 120) return `${s.slice(0, 117)}…`;
+  return s;
+}
+function prettyField(key) {
+  if (!key) return '';
+  if (FIELD_LABEL[key]) return FIELD_LABEL[key];
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+function sentenceFor(entry) {
+  const verb = ACTION_VERB[entry.action_type] || entry.action_type;
+  const entity = String(entry.entity_type || '').replace(/_/g, ' ');
+  const id = entry.entity_id ? ` #${entry.entity_id}` : '';
+  return `${entry.action_by} ${verb} ${entity}${id}`;
+}
+
+const ACTION_TONES = {
+  create: 'success', update: 'info', delete: 'danger', read: 'neutral',
+  approve: 'success', reject: 'warning', reminder: 'purple', schedule: 'info',
+};
 
 const ACTION_COLORS = { create: 'bg-emerald-500', update: 'bg-blue-500', delete: 'bg-red-500', read: 'bg-gray-400', approve: 'bg-emerald-600', reject: 'bg-amber-500', reminder: 'bg-violet-500', schedule: 'bg-indigo-500' };
 const ACTION_ICONS = { create: '+', update: '~', delete: '\u00d7', read: '\u25cb', approve: 'A', reject: 'R', reminder: '!', schedule: 'S' };
@@ -20,6 +83,130 @@ function formatEntityType(value) {
   return String(value || '')
     .replace('backfill_reason', 'replacement_reason')
     .replace(/_/g, ' ');
+}
+
+function AuditRow({ entry }) {
+  const [showTech, setShowTech] = useState(false);
+  const verb = ACTION_VERB[entry.action_type] || entry.action_type;
+  const whenText = new Date(entry.created_at).toLocaleString();
+  const changes = Array.isArray(entry.changes) ? entry.changes : [];
+  const hasTech = changes.length > 0 || (entry.metadata && Object.keys(entry.metadata).length > 0);
+  const headline = entry.summary || sentenceFor(entry);
+
+  // Build human-readable sentences from changes
+  const humanLines = changes.slice(0, 6).map((change) => {
+    const field = prettyField(change.field);
+    const before = prettyValue(change.before);
+    const after = prettyValue(change.after);
+    if (change.before == null || change.before === '') return `Set ${field} to ${after}`;
+    return `Changed ${field} from ${before} to ${after}`;
+  });
+
+  return (
+    <div className="relative pl-14">
+      <div
+        className={`absolute left-4 w-5 h-5 rounded-full ${ACTION_COLORS[entry.action_type] || 'bg-gray-400'} border-2 border-white shadow flex items-center justify-center`}
+      >
+        <span className="text-white text-xs font-bold">{ACTION_ICONS[entry.action_type] || '·'}</span>
+      </div>
+      <div className="card !p-4">
+        <div className="flex items-start justify-between gap-3 mb-1" style={{ flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-main)' }}>
+              <span style={{ color: 'var(--accent-blue)' }}>{entry.action_by}</span>{' '}
+              <span style={{ color: 'var(--text-body)', fontWeight: 500 }}>{verb}</span>{' '}
+              <span style={{ color: 'var(--text-body)', fontWeight: 500, textTransform: 'capitalize' }}>
+                {formatEntityType(entry.entity_type)}
+              </span>
+              {entry.entity_id && (
+                <span style={{ color: 'var(--text-faint)', fontWeight: 500 }}> · #{entry.entity_id}</span>
+              )}
+            </p>
+            {headline && headline !== sentenceFor(entry) && (
+              <p style={{ fontSize: 13, color: 'var(--text-body)', marginTop: 4 }}>{headline}</p>
+            )}
+          </div>
+          <span style={{ fontSize: 11, color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>{whenText}</span>
+        </div>
+
+        {humanLines.length > 0 && (
+          <ul style={{ marginTop: 8, paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 4 }}>
+            {humanLines.map((line, i) => (
+              <li
+                key={i}
+                style={{
+                  fontSize: 13,
+                  color: 'var(--text-body)',
+                  padding: '6px 10px',
+                  background: 'var(--surface-muted)',
+                  border: '1px solid var(--line-subtle)',
+                  borderRadius: 'var(--radius-sm)',
+                }}
+              >
+                {line}
+              </li>
+            ))}
+            {changes.length > humanLines.length && (
+              <li style={{ fontSize: 12, color: 'var(--text-faint)', paddingLeft: 10 }}>
+                +{changes.length - humanLines.length} more change{changes.length - humanLines.length === 1 ? '' : 's'}
+              </li>
+            )}
+          </ul>
+        )}
+
+        {hasTech && (
+          <div style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              onClick={() => setShowTech((v) => !v)}
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: 'var(--text-faint)',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              {showTech ? 'Hide technical details' : 'Show technical details'}
+            </button>
+            {showTech && (
+              <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                {changes.map((change, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      border: '1px solid var(--line-subtle)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: 8,
+                      background: 'var(--surface)',
+                    }}
+                  >
+                    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-faint)', marginBottom: 4 }}>
+                      {change.field}
+                    </p>
+                    <pre style={{ fontSize: 11, color: 'var(--text-body)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
+                      Before: {JSON.stringify(change.before, null, 2)}
+                      {'\n'}
+                      After: {JSON.stringify(change.after, null, 2)}
+                    </pre>
+                  </div>
+                ))}
+                {entry.metadata && Object.keys(entry.metadata).length > 0 && (
+                  <pre style={{ fontSize: 11, color: 'var(--text-body)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', padding: 8, background: 'var(--surface-muted)', borderRadius: 'var(--radius-sm)' }}>
+                    {JSON.stringify(entry.metadata, null, 2)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function AuditTrail() {
@@ -92,61 +279,58 @@ export default function AuditTrail() {
   const topEntities = stats?.actions_by_entity?.slice(0, 3) || [];
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="page-title">Audit Trail</h1>
-          <p className="text-sm text-gray-500 mt-1">{total} actions recorded</p>
-        </div>
-        <button onClick={handleExport} className="btn-secondary">Export</button>
-      </div>
+    <div className="page-container">
+      <PageHeader
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Audit Trail' }]}
+        title="Audit Trail"
+        subtitle="Every state change, approval, and admin action — searchable by actor, entity, or field."
+        meta={[{ label: `${total} actions` }]}
+        actions={<button onClick={handleExport} className="btn-secondary">Export</button>}
+      />
 
-      {/* Stats */}
       {stats && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px,1fr))' }}>
           {['create', 'update', 'approve', 'reject'].map(type => (
-            <div key={type} className="card flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-lg ${ACTION_COLORS[type]} flex items-center justify-center text-white font-bold text-lg`}>
-                {ACTION_ICONS[type]}
-              </div>
-              <div>
-                <p className="text-xl font-bold">{stats[type] || 0}</p>
-                <p className="text-xs text-gray-500 capitalize">{type} actions</p>
-              </div>
-            </div>
+            <StatCard
+              key={type}
+              label={`${type.charAt(0).toUpperCase()}${type.slice(1)} actions`}
+              value={stats[type] || 0}
+              deltaTone={ACTION_TONES[type]}
+            />
           ))}
         </div>
       )}
 
       {stats && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-          <div className="card">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 mb-3">Top Actors</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <SectionCard title="Top Actors">
             <div className="space-y-2">
-              {topActors.length === 0 ? <p className="text-sm text-gray-400">No audit activity yet.</p> : topActors.map((actor) => (
-                <div key={actor.action_by} className="flex items-center justify-between text-sm">
-                  <span className="text-gray-700">{actor.action_by}</span>
-                  <span className="font-semibold text-gray-900">{actor.count}</span>
+              {topActors.length === 0 ? (
+                <p style={{ fontSize: 13, color: 'var(--text-faint)' }}>No audit activity yet.</p>
+              ) : topActors.map((actor) => (
+                <div key={actor.action_by} className="flex items-center justify-between" style={{ fontSize: 13 }}>
+                  <span style={{ color: 'var(--text-body)' }}>{actor.action_by}</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{actor.count}</span>
                 </div>
               ))}
             </div>
-          </div>
-          <div className="card">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 mb-3">Top Entities</p>
+          </SectionCard>
+          <SectionCard title="Top Entities">
             <div className="space-y-2">
-              {topEntities.length === 0 ? <p className="text-sm text-gray-400">No entity activity yet.</p> : topEntities.map((entity) => (
-                <div key={entity.entity_type} className="flex items-center justify-between text-sm">
-                  <span className="text-gray-700 capitalize">{formatEntityType(entity.entity_type)}</span>
-                  <span className="font-semibold text-gray-900">{entity.count}</span>
+              {topEntities.length === 0 ? (
+                <p style={{ fontSize: 13, color: 'var(--text-faint)' }}>No entity activity yet.</p>
+              ) : topEntities.map((entity) => (
+                <div key={entity.entity_type} className="flex items-center justify-between" style={{ fontSize: 13 }}>
+                  <span style={{ color: 'var(--text-body)', textTransform: 'capitalize' }}>{formatEntityType(entity.entity_type)}</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{entity.count}</span>
                 </div>
               ))}
             </div>
-          </div>
+          </SectionCard>
         </div>
       )}
 
-      {/* Filters */}
-      <div className="card mb-6">
+      <SectionCard title="Filters">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <input
             type="text"
@@ -180,66 +364,14 @@ export default function AuditTrail() {
             className="input-field"
           />
         </div>
-      </div>
+      </SectionCard>
 
       {/* Timeline */}
       <div className="relative">
         <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-200"></div>
         <div className="space-y-4">
           {entries.map((entry, idx) => (
-            <div key={entry.id || idx} className="relative pl-14">
-              <div className={`absolute left-4 w-5 h-5 rounded-full ${ACTION_COLORS[entry.action_type]} border-2 border-white shadow flex items-center justify-center`}>
-                <span className="text-white text-xs font-bold">{ACTION_ICONS[entry.action_type]}</span>
-              </div>
-              <div className="card !p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm text-gray-900">{entry.action_by}</span>
-                    <span className={`badge ${ACTION_BADGES[entry.action_type] || ACTION_BADGES.read}`}>
-                      {entry.action_type}
-                    </span>
-                    <span className="text-sm text-gray-500">{formatEntityType(entry.entity_type)}</span>
-                    {entry.entity_id && <span className="text-xs text-gray-400">#{entry.entity_id}</span>}
-                  </div>
-                  <span className="text-xs text-gray-400">{new Date(entry.created_at).toLocaleString()}</span>
-                </div>
-                <p className="text-sm text-gray-700">{entry.summary || `${entry.action_by} updated ${formatEntityType(entry.entity_type)}`}</p>
-                {entry.changed_fields?.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {entry.changed_fields.map((field) => (
-                      <span key={`${entry.id}-${field}`} className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
-                        {field}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {(entry.changes?.length > 0 || entry.metadata) && (
-                  <div className="mt-3 space-y-3">
-                    {entry.changes?.slice(0, 6).map((change, changeIndex) => (
-                      <div key={`${entry.id}-${change.field}-${changeIndex}`} className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
-                        <p className="font-medium text-gray-800">{change.field}</p>
-                        <div className="mt-2 grid gap-2 md:grid-cols-2">
-                          <div className="rounded-lg bg-red-50 px-3 py-2">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700">Before</p>
-                            <pre className="mt-1 whitespace-pre-wrap break-words text-xs text-red-700">{formatValue(change.before)}</pre>
-                          </div>
-                          <div className="rounded-lg bg-green-50 px-3 py-2">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-green-700">After</p>
-                            <pre className="mt-1 whitespace-pre-wrap break-words text-xs text-green-700">{formatValue(change.after)}</pre>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {entry.metadata && Object.keys(entry.metadata).length > 0 && (
-                      <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">Metadata</p>
-                        <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-indigo-800">{formatValue(entry.metadata)}</pre>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+            <AuditRow key={entry.id || idx} entry={entry} />
           ))}
         </div>
       </div>

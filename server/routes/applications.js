@@ -272,6 +272,8 @@ const PATCH_TEXT_FIELDS = new Set([
   'dropout_reason',
   'interviewer_feedback_remarks',
   'interviewer_final_decision',
+  'dob',
+  'uploaded_by',
 ]);
 
 function normalizePatchFieldValue(dbField, value) {
@@ -299,11 +301,16 @@ function normalizePatchFieldValue(dbField, value) {
   return { include: true, value };
 }
 
+function normalizePhone(value) {
+  if (!value) return null;
+  return String(value).replace(/\D/g, '');
+}
+
 function normalizeApplicationInput(input, actorEmail) {
   const atsJobId = input.ats_job_id || input.job_id || null;
   const talentPoolOnly = coerceBoolean(input.talent_pool_only) || !atsJobId;
   const resumePath = input.resume_path || input.resume_url || null;
-  const source = input.source || 'Direct';
+  const source = input.source || null;
 
   return {
     ats_job_id: atsJobId,
@@ -312,7 +319,7 @@ function normalizeApplicationInput(input, actorEmail) {
     candidate_aadhar: input.candidate_aadhar || null,
     candidate_pan: input.candidate_pan || null,
     candidate_email: input.candidate_email || input.email || null,
-    candidate_phone: input.candidate_phone || input.phone || null,
+    candidate_phone: normalizePhone(input.candidate_phone || input.phone),
     candidate_age: coerceNumber(input.candidate_age || input.age),
     candidate_gender: input.candidate_gender || input.gender || null,
     candidate_years_of_experience: coerceNumber(
@@ -331,12 +338,14 @@ function normalizeApplicationInput(input, actorEmail) {
     referrer_emp_id: input.referrer_emp_id || input.referred_by || null,
     consultant_code: input.consultant_code || null,
     referral_flag: coerceBoolean(input.referral_flag) || source === 'Employee Referral' || Boolean(input.referrer_emp_id),
-    recruiter_email: input.recruiter_email || null,
+    recruiter_email: input.recruiter_email || actorEmail || null,
     talent_pool_only: talentPoolOnly,
     talent_pool_expires_at: talentPoolOnly
       ? new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000).toISOString()
       : null,
     created_by: input.created_by || actorEmail || null,
+    uploaded_by: actorEmail || null,
+    dob: input.dob || null,
   };
 }
 
@@ -345,6 +354,18 @@ async function createApplicationRecord(input, actorEmail) {
 
   if (!payload.candidate_name || !payload.candidate_email) {
     throw new Error('candidate_name and candidate_email are required');
+  }
+
+  if (!payload.source) {
+    throw new Error('source is required — specify how this candidate was sourced');
+  }
+
+  if (payload.candidate_phone) {
+    const digits = String(payload.candidate_phone).replace(/\D/g, '');
+    if (digits.length !== 10) {
+      throw new Error('candidate_phone must be exactly 10 digits');
+    }
+    payload.candidate_phone = digits;
   }
 
   if (payload.ats_job_id) {
@@ -358,6 +379,7 @@ async function createApplicationRecord(input, actorEmail) {
     }
   }
 
+  // Same-job duplicate check (block)
   if (payload.ats_job_id) {
     const duplicateCheck = await pool.query(
       `SELECT id, application_id FROM applications
@@ -365,9 +387,22 @@ async function createApplicationRecord(input, actorEmail) {
          AND (candidate_email = $2 OR ($3::text IS NOT NULL AND candidate_phone = $3))`,
       [payload.ats_job_id, payload.candidate_email, payload.candidate_phone]
     );
-
     if (duplicateCheck.rows.length > 0) {
       return { duplicate: duplicateCheck.rows[0], payload };
+    }
+  }
+
+  // Cross-job duplicate detection by phone (flag, don't block)
+  let isDuplicate = false;
+  let duplicateOfId = null;
+  if (payload.candidate_phone) {
+    const crossDupe = await pool.query(
+      `SELECT id FROM applications WHERE active_flag = true AND candidate_phone = $1 LIMIT 1`,
+      [payload.candidate_phone]
+    );
+    if (crossDupe.rows.length > 0) {
+      isDuplicate = true;
+      duplicateOfId = crossDupe.rows[0].id;
     }
   }
 
@@ -401,11 +436,15 @@ async function createApplicationRecord(input, actorEmail) {
       recruiter_email,
       talent_pool_only,
       talent_pool_expires_at,
-      created_by
+      created_by,
+      uploaded_by,
+      dob,
+      is_duplicate,
+      duplicate_of_id
     ) VALUES (
       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
       $11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-      $21,$22,$23,$24,$25,$26,$27,$28
+      $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
     )
     RETURNING *`,
     [
@@ -437,10 +476,14 @@ async function createApplicationRecord(input, actorEmail) {
       payload.talent_pool_only,
       payload.talent_pool_expires_at,
       payload.created_by,
+      payload.uploaded_by,
+      payload.dob,
+      isDuplicate,
+      duplicateOfId,
     ]
   );
 
-  return { row: result.rows[0], payload };
+  return { row: result.rows[0], payload, isDuplicate };
 }
 
 async function softDeactivateApplication(id, actorEmail, reason = 'Removed from active workflows') {
@@ -1074,7 +1117,7 @@ router.get('/:id', adminOrRecruiter, async (req, res) => {
 // ---------------------------------------------------------------------------
 router.post('/', adminOrRecruiter, async (req, res) => {
   try {
-    const { row, duplicate, payload } = await createApplicationRecord(req.body, req.user?.email);
+    const { row, duplicate, payload, isDuplicate } = await createApplicationRecord(req.body, req.user?.email);
     if (duplicate) {
       return res.status(409).json({
         error: 'Duplicate application found for this job',
@@ -1098,10 +1141,11 @@ router.post('/', adminOrRecruiter, async (req, res) => {
       }).catch(err => console.error('Notification email error:', err));
     }
 
-    res.status(201).json(row);
+    res.status(201).json({ ...row, _warnings: isDuplicate ? ['This phone number exists in another application — possible duplicate candidate'] : [] });
   } catch (err) {
     console.error('Create application error:', err);
-    res.status(err.message.includes('required') ? 400 : 500).json({ error: err.message || 'Failed to create application' });
+    const statusCode = (err.message.includes('required') || err.message.includes('10 digits')) ? 400 : 500;
+    res.status(statusCode).json({ error: err.message || 'Failed to create application' });
   }
 });
 
@@ -2052,4 +2096,5 @@ router.post('/bulk-status', adminOrRecruiter, async (req, res) => {
   }
 });
 
+export { extractTextFromResume, createApplicationRecord };
 export default router;

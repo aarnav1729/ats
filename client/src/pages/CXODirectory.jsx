@@ -357,7 +357,7 @@ export default function CXODirectory() {
             <p className="workspace-eyebrow">Approval Directory</p>
             <h1 className="page-title mt-2">CXO Directory</h1>
             <p className="mt-3 text-sm leading-7 text-gray-600">
-              Direct reports to the Managing Director from SPOT, with editable approval scope for new-position requisitions. This page now uses the full workspace width so the org map and approval directory can be reviewed without cramped cards.
+              Direct reports to the Managing Director from SPOT, with editable approval scope for new-position requisitions.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">

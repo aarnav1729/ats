@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import pool from '../db.js';
 import { generateEmailDraft } from '../services/ai.js';
+import { sendCustomEmail } from '../services/email.js';
 
 const router = Router();
 
@@ -39,6 +40,24 @@ router.put('/:id/read', async (req, res) => {
     );
     res.json({ message: 'Marked as read' });
   } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/send-email', async (req, res) => {
+  try {
+    const { to, cc, subject, html_body, context_type, context_id } = req.body || {};
+    if (!to || !subject) return res.status(400).json({ error: 'to and subject are required' });
+    const toList = Array.isArray(to) ? to : [to];
+    if (!toList.length || !toList[0]) return res.status(400).json({ error: 'At least one recipient is required' });
+    const result = await sendCustomEmail(
+      { to: toList, cc: cc || [], subject, htmlBody: html_body || subject, sentBy: req.user?.email, contextType: context_type, contextId: context_id },
+      pool
+    );
+    if (!result) return res.status(500).json({ error: 'Email send failed' });
+    res.json({ message: 'Email sent' });
+  } catch (err) {
+    console.error('Send email error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

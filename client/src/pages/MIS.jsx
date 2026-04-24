@@ -1,815 +1,768 @@
 import { useEffect, useMemo, useState } from 'react';
-import { misAPI } from '../services/api';
-import toast from 'react-hot-toast';
-import InfoTip from '../components/InfoTip';
-import AppModal from '../components/AppModal';
-import DataTable from '../components/DataTable';
 import * as XLSX from 'xlsx';
+import toast from 'react-hot-toast';
+import { misAPI, timelineAPI } from '../services/api';
+import DataTable from '../components/DataTable';
+import AppModal from '../components/AppModal';
+import { PageHeader, Tabs, StatCard, SectionCard, EmptyState } from '../components/ui';
+import haptic from '../utils/haptic';
 
-const RANGE_ORDER = ['1 - 30 days', '31 - 60 days', '61 - 90 days', 'More than 90 days'];
+/**
+ * MIS — Redesigned from scratch (v2).
+ *
+ * Design principles
+ *  - Tabbed hub: Executive Overview · TAT & Funnel · Recruiter Output · Backouts & Join Risk · Raw Data · Step TAT
+ *  - Every report exposes both visual summary AND a raw dataset with filters, sort, search, and .xlsx export
+ *  - "Show workings" drawer for every metric: the exact SQL logic in English plus the underlying rows
+ *  - Step TAT explorer: pick any two consecutive events and see avg/min/max days across the organisation
+ *  - Every page surface is responsive (flex-wrap, stat-grid, table horizontal-scroll)
+ */
+
 const FUNNEL_STAGES = ['InQueue', 'Applied', 'Shortlisted', 'Interview', 'Selected', 'Offered', 'Joined'];
-const DRILLDOWN_OPTIONS = [
-  ['business_unit', 'Entity / BU'],
-  ['location', 'Location'],
-  ['phase', 'Phase'],
-  ['department', 'Department'],
-  ['recruiter', 'Recruiter'],
-];
-const FUNNEL_COLORS = {
-  InQueue: 'from-slate-500 to-slate-400',
-  Applied: 'from-blue-600 to-blue-400',
-  Shortlisted: 'from-indigo-600 to-indigo-400',
-  Interview: 'from-violet-600 to-violet-400',
-  Selected: 'from-emerald-600 to-emerald-400',
-  Offered: 'from-teal-600 to-teal-400',
-  Joined: 'from-green-700 to-green-500',
-};
-const FUNNEL_ACCENTS = {
-  InQueue: '#64748b',
-  Applied: '#2563eb',
-  Shortlisted: '#4f46e5',
-  Interview: '#7c3aed',
-  Selected: '#059669',
-  Offered: '#0d9488',
-  Joined: '#15803d',
-};
-const METRIC_ACCENTS = [
-  'from-blue-500 to-blue-400',
-  'from-teal-500 to-teal-400',
-  'from-indigo-500 to-indigo-400',
-  'from-emerald-500 to-emerald-400',
-  'from-amber-500 to-amber-400',
-  'from-slate-500 to-slate-400',
+const RANGE_ORDER = ['1 - 30 days', '31 - 60 days', '61 - 90 days', 'More than 90 days'];
+
+const TABS = [
+  { value: 'overview', label: 'Executive Overview' },
+  { value: 'tat', label: 'TAT & Funnel' },
+  { value: 'recruiter', label: 'Recruiter Output' },
+  { value: 'backouts', label: 'Backouts & Risk' },
+  { value: 'steptat', label: 'Step TAT Explorer' },
+  { value: 'raw', label: 'Raw Data' },
 ];
 
-function toNumber(value) {
-  return Number(value || 0);
-}
-
-function compactNumber(value) {
-  return new Intl.NumberFormat('en-IN', {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(toNumber(value));
-}
-
-function bucketForDays(days) {
-  const value = toNumber(days);
-  if (value <= 30) return '1 - 30 days';
-  if (value <= 60) return '31 - 60 days';
-  if (value <= 90) return '61 - 90 days';
-  return 'More than 90 days';
-}
-
-function isReplacement(row) {
-  return String(row?.requisition_type || '').toLowerCase() === 'backfill';
-}
-
-function buildTatSummary(rows, dayField) {
-  const buckets = {
-    overall: Object.fromEntries(RANGE_ORDER.map((range) => [range, 0])),
-    replacement: Object.fromEntries(RANGE_ORDER.map((range) => [range, 0])),
-    newPosition: Object.fromEntries(RANGE_ORDER.map((range) => [range, 0])),
-  };
-
-  rows.forEach((row) => {
-    const bucket = bucketForDays(row?.[dayField]);
-    buckets.overall[bucket] += 1;
-    if (isReplacement(row)) buckets.replacement[bucket] += 1;
-    else buckets.newPosition[bucket] += 1;
-  });
-
-  return buckets;
-}
-
-function formatPercent(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return '--';
-  return `${numeric.toFixed(1)}%`;
-}
-
+// ── utils ────────────────────────────────────────────────────────────────
+const toNumber = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const compact = (v) => {
+  const n = Number(v || 0);
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
+  return String(Math.round(n));
+};
+const pct = (v) => (v == null ? '—' : `${Number(v).toFixed(1)}%`);
+const days = (v) => (v == null ? '—' : `${Number(v).toFixed(1)}d`);
+const bucketForDays = (d) => {
+  const n = toNumber(d);
+  if (n <= 30) return RANGE_ORDER[0];
+  if (n <= 60) return RANGE_ORDER[1];
+  if (n <= 90) return RANGE_ORDER[2];
+  return RANGE_ORDER[3];
+};
 function exportToExcel(rows, filename = 'mis-report.xlsx') {
-  if (!rows?.length) {
-    toast.error('No data to export');
-    return;
-  }
+  if (!rows?.length) { toast('No rows to export'); return; }
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Data');
+  XLSX.utils.book_append_sheet(wb, ws, 'Report');
   XLSX.writeFile(wb, filename);
-  toast.success(`Exported ${rows.length} rows`);
+  haptic.success();
 }
 
-/* ── Metric Card with gradient accent ── */
-function MetricCard({ label, value, tip, tone = 'text-gray-900', accent, onClick }) {
+// ── Report card with "show workings" drawer ─────────────────────────────
+function ReportCard({ title, subtitle, children, working, rows, filename, actions }) {
+  const [open, setOpen] = useState(false);
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="metric-tile text-left group"
+    <SectionCard
+      title={title}
+      subtitle={subtitle}
+      actions={
+        <div className="flex flex-wrap items-center gap-2">
+          {rows && rows.length > 0 && (
+            <button
+              type="button"
+              onClick={() => exportToExcel(rows, filename)}
+              className="btn-secondary btn-sm"
+            >
+              Export .xlsx ({rows.length})
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="btn-secondary btn-sm"
+          >
+            Show working
+          </button>
+          {actions}
+        </div>
+      }
     >
-      <div className={`absolute inset-x-0 top-0 h-1 rounded-t-[26px] bg-gradient-to-r ${accent || 'from-indigo-500 to-indigo-400'} opacity-70 group-hover:opacity-100 transition-opacity`} />
-      <div className="flex items-center gap-2">
-        <p className="workspace-kicker">{label}</p>
-        {tip && <InfoTip text={tip} />}
-      </div>
-      <p className={`mt-3 text-3xl font-semibold tracking-[-0.03em] ${tone}`}>{value}</p>
-    </button>
+      {children}
+      <AppModal open={open} onClose={() => setOpen(false)} title={`How this is calculated · ${title}`} width="full">
+        {working && (
+          <div style={{ marginBottom: 18 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--text-faint)', marginBottom: 8 }}>
+              Method
+            </p>
+            <div
+              style={{
+                padding: 14,
+                border: '1px solid var(--line)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--surface-muted)',
+                fontSize: 13,
+                lineHeight: 1.75,
+                color: 'var(--text-body)',
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {working}
+            </div>
+          </div>
+        )}
+        {rows && rows.length > 0 ? (
+          <>
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--text-faint)', margin: '18px 0 8px' }}>
+              Underlying rows ({rows.length})
+            </p>
+            <DataTable
+              title="Underlying data"
+              data={rows}
+              exportFileName={filename || 'report'}
+              columns={Object.keys(rows[0]).map((key) => ({ key, label: key.replace(/_/g, ' ') }))}
+            />
+          </>
+        ) : (
+          <p style={{ color: 'var(--text-faint)', fontSize: 13 }}>No underlying rows for this metric.</p>
+        )}
+      </AppModal>
+    </SectionCard>
   );
 }
 
-/* ── TAT Range Summary ── */
-function RangeSummary({ title, summary, onSelect }) {
-  const total = RANGE_ORDER.reduce((sum, range) => sum + toNumber(summary?.[range]), 0);
-
+// ── Funnel bars ──────────────────────────────────────────────────────────
+function FunnelBars({ rows }) {
+  const max = Math.max(...rows.map((r) => r.count), 1);
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4">
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <div>
-          <p className="text-sm font-semibold text-gray-900">{title}</p>
-          <p className="text-xs text-gray-500">Total {total}</p>
+    <div style={{ display: 'grid', gap: 10 }}>
+      {rows.map((row) => (
+        <div key={row.stage} style={{ display: 'grid', gridTemplateColumns: 'minmax(130px, max-content) 1fr auto', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-main)' }}>{row.stage}</span>
+          <div style={{ height: 8, background: 'var(--surface-muted)', borderRadius: 999, overflow: 'hidden', border: '1px solid var(--line-subtle)' }}>
+            <div style={{ width: `${(row.count / max) * 100}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent-blue), #0c8da3)', borderRadius: 999 }} />
+          </div>
+          <span style={{ fontSize: 12, color: 'var(--text-body)', minWidth: 48, textAlign: 'right' }}>{compact(row.count)}</span>
         </div>
-      </div>
-      <div className="space-y-3">
-        {RANGE_ORDER.map((range) => (
-          <button
-            key={range}
-            type="button"
-            onClick={() => onSelect?.(range)}
-            className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-left transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:-translate-y-0.5 hover:shadow-sm active:scale-[0.98]"
-          >
-            <span className="text-sm text-gray-700">{range}</span>
-            <span className="text-sm font-semibold text-gray-900">{toNumber(summary?.[range])}</span>
-          </button>
-        ))}
-      </div>
+      ))}
     </div>
   );
 }
 
-/* ── Reusable lightweight summary table retained for small custom sections ── */
-function StaticReportTable({ title, tip, rows, columns, onRowClick }) {
+function RangeTable({ summary, onCellClick, valueLabel = 'count' }) {
   return (
-    <div className="workspace-card">
-      <div className="flex items-center gap-2 mb-4">
-        <h2 className="section-title">{title}</h2>
-        {tip && <InfoTip text={tip} />}
-      </div>
-      {rows.length === 0 ? (
-        <p className="py-8 text-center text-sm text-gray-400">No data available yet.</p>
-      ) : (
-        <div className="table-container">
-          <table className="w-full text-sm">
-            <thead>
-              <tr>
-                {columns.map((column) => (
-                  <th key={column.key} className="table-header px-4 py-3">{column.label}</th>
+    <div style={{ overflowX: 'auto' }}>
+      <table className="data-table" style={{ width: '100%', minWidth: 520 }}>
+        <thead>
+          <tr>
+            <th>Range</th>
+            <th>Overall</th>
+            <th>Replacement</th>
+            <th>New Position</th>
+          </tr>
+        </thead>
+        <tbody>
+          {RANGE_ORDER.map((label) => {
+            const cells = ['overall', 'replacement', 'newPosition'];
+            return (
+              <tr key={label}>
+                <td style={{ fontWeight: 600 }}>{label}</td>
+                {cells.map((key) => (
+                  <td key={key}>
+                    <button
+                      type="button"
+                      onClick={() => onCellClick?.(label, key)}
+                      style={{ color: 'var(--accent-blue)', fontWeight: 600, cursor: 'pointer', background: 'none', border: 'none' }}
+                    >
+                      {toNumber(summary?.[key]?.[label]?.[valueLabel] || 0)}
+                    </button>
+                  </td>
                 ))}
               </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, index) => (
-                <tr
-                  key={row.id || row.job_id || row.application_id || index}
-                  className={`table-row ${onRowClick ? 'cursor-pointer' : ''}`}
-                  onClick={onRowClick ? () => onRowClick(row) : undefined}
-                >
-                  {columns.map((column) => (
-                    <td key={column.key} className="px-4 py-3 text-gray-700">
-                      {column.render ? column.render(row) : (row[column.key] ?? '-')}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
 
+function buildRangeSummary(rows, dayField) {
+  const empty = () => Object.fromEntries(RANGE_ORDER.map((r) => [r, { count: 0 }]));
+  const isReplacement = (row) => String(row.requisition_type || '').toLowerCase().includes('replace');
+  const summary = { overall: empty(), replacement: empty(), newPosition: empty() };
+  rows.forEach((row) => {
+    const bucket = bucketForDays(row[dayField]);
+    summary.overall[bucket].count += 1;
+    if (isReplacement(row)) summary.replacement[bucket].count += 1;
+    else summary.newPosition[bucket].count += 1;
+  });
+  return summary;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 export default function MIS() {
+  const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
-  const [datasets, setDatasets] = useState({
-    funnel: [],
-    entitySummary: [],
-    backfillSummary: [],
-    newPositionsSummary: [],
-    monthlyOffers: [],
-    openPositionsTat: [],
-    offersTat: [],
-    selectionToOffer: [],
-    recruiterSourcing: [],
+
+  // Shared filter bar
+  const [filters, setFilters] = useState({ date_from: '', date_to: '', recruiter: '' });
+
+  // Datasets
+  const [ds, setDs] = useState({
+    funnel: [], openPositionsTat: [], offersTat: [], monthlyOffers: [], recruiterSourcing: [],
     backoutsSummary: { details: [], summary: {} },
     timeToFill: { details: [], averages: [], average_days: null },
     timeToJoin: { details: [], average_days: null },
     offerAcceptance: { details: [], rate: null, accepted: 0, total: 0 },
     offerJoinRatio: { details: [], ratio: null, joined: 0, offered: 0 },
+    ninetyDaysRecruiter: { summary: [], details: [] },
   });
-  const [drilldownOpen, setDrilldownOpen] = useState(false);
-  const [detailTitle, setDetailTitle] = useState('');
-  const [detailRows, setDetailRows] = useState([]);
-  const [groupBy, setGroupBy] = useState('department');
-  const [groupSummaryRows, setGroupSummaryRows] = useState([]);
-  const [groupSummaryLoading, setGroupSummaryLoading] = useState(false);
-  const [activeFunnelStage, setActiveFunnelStage] = useState(null);
 
+  // Step TAT explorer state
+  const [stepTat, setStepTat] = useState([]);
+  const [stepTatLoading, setStepTatLoading] = useState(false);
+  const [stepEntity, setStepEntity] = useState('application');
+
+  // Raw data
+  const [rawRows, setRawRows] = useState([]);
+  const [rawLoading, setRawLoading] = useState(false);
+  const [rawLoaded, setRawLoaded] = useState(false);
+
+  // Drilldown modal
+  const [drillOpen, setDrillOpen] = useState(false);
+  const [drillTitle, setDrillTitle] = useState('');
+  const [drillRows, setDrillRows] = useState([]);
+
+  const showDrill = (title, rows) => {
+    haptic.medium();
+    setDrillTitle(title);
+    setDrillRows(rows || []);
+    setDrillOpen(true);
+  };
+
+  // Load core datasets
   useEffect(() => {
-    const loadPage = async () => {
+    async function load() {
       setLoading(true);
       try {
-        const [
-          funnel,
-          entitySummary,
-          backfillSummary,
-          newPositionsSummary,
-          monthlyOffers,
-          openPositionsTat,
-          offersTat,
-          selectionToOffer,
-          recruiterSourcing,
-          backoutsSummary,
-          timeToFill,
-          timeToJoin,
-          offerAcceptance,
-          offerJoinRatio,
-        ] = await Promise.all([
-          misAPI.funnel().catch(() => ({ data: [] })),
-          misAPI.entitySummary().catch(() => ({ data: [] })),
-          misAPI.backfillSummary().catch(() => ({ data: [] })),
-          misAPI.newPositionsSummary().catch(() => ({ data: [] })),
-          misAPI.monthlyOffers().catch(() => ({ data: [] })),
-          misAPI.openPositionsTat().catch(() => ({ data: [] })),
-          misAPI.offersTat().catch(() => ({ data: [] })),
-          misAPI.selectionToOffer().catch(() => ({ data: [] })),
-          misAPI.recruiterSourcing().catch(() => ({ data: [] })),
-          misAPI.backoutsSummary().catch(() => ({ data: { details: [], summary: {} } })),
-          misAPI.timeToFill().catch(() => ({ data: { details: [], averages: [], average_days: null } })),
-          misAPI.timeToJoin().catch(() => ({ data: { details: [], average_days: null } })),
-          misAPI.offerAcceptanceRate().catch(() => ({ data: { details: [], rate: null, accepted: 0, total: 0 } })),
-          misAPI.offerJoinRatio().catch(() => ({ data: { details: [], ratio: null, joined: 0, offered: 0 } })),
+        const [funnel, openTat, offersTat, monthly, sourcing, backouts, ttf, ttj, oar, ojr, ninety] = await Promise.all([
+          misAPI.funnel(filters).catch(() => ({ data: [] })),
+          misAPI.openPositionsTat(filters).catch(() => ({ data: [] })),
+          misAPI.offersTat(filters).catch(() => ({ data: [] })),
+          misAPI.monthlyOffers(filters).catch(() => ({ data: [] })),
+          misAPI.recruiterSourcing(filters).catch(() => ({ data: [] })),
+          misAPI.backoutsSummary(filters).catch(() => ({ data: { details: [], summary: {} } })),
+          misAPI.timeToFill(filters).catch(() => ({ data: { details: [], averages: [], average_days: null } })),
+          misAPI.timeToJoin(filters).catch(() => ({ data: { details: [], average_days: null } })),
+          misAPI.offerAcceptanceRate(filters).catch(() => ({ data: { details: [], rate: null, accepted: 0, total: 0 } })),
+          misAPI.offerJoinRatio(filters).catch(() => ({ data: { details: [], ratio: null, joined: 0, offered: 0 } })),
+          misAPI.ninetyDaysRecruiter(filters).catch(() => ({ data: { summary: [], details: [] } })),
         ]);
-
-        setDatasets({
+        setDs({
           funnel: Array.isArray(funnel.data) ? funnel.data : [],
-          entitySummary: Array.isArray(entitySummary.data) ? entitySummary.data : [],
-          backfillSummary: Array.isArray(backfillSummary.data) ? backfillSummary.data : [],
-          newPositionsSummary: Array.isArray(newPositionsSummary.data) ? newPositionsSummary.data : [],
-          monthlyOffers: Array.isArray(monthlyOffers.data) ? monthlyOffers.data : [],
-          openPositionsTat: Array.isArray(openPositionsTat.data) ? openPositionsTat.data : [],
+          openPositionsTat: Array.isArray(openTat.data) ? openTat.data : [],
           offersTat: Array.isArray(offersTat.data) ? offersTat.data : [],
-          selectionToOffer: Array.isArray(selectionToOffer.data) ? selectionToOffer.data : [],
-          recruiterSourcing: Array.isArray(recruiterSourcing.data) ? recruiterSourcing.data : [],
-          backoutsSummary: backoutsSummary.data || { details: [], summary: {} },
-          timeToFill: timeToFill.data || { details: [], averages: [], average_days: null },
-          timeToJoin: timeToJoin.data || { details: [], average_days: null },
-          offerAcceptance: offerAcceptance.data || { details: [], rate: null, accepted: 0, total: 0 },
-          offerJoinRatio: offerJoinRatio.data || { details: [], ratio: null, joined: 0, offered: 0 },
+          monthlyOffers: Array.isArray(monthly.data) ? monthly.data : [],
+          recruiterSourcing: Array.isArray(sourcing.data) ? sourcing.data : [],
+          backoutsSummary: backouts.data || { details: [], summary: {} },
+          timeToFill: ttf.data || { details: [], averages: [], average_days: null },
+          timeToJoin: ttj.data || { details: [], average_days: null },
+          offerAcceptance: oar.data || { details: [], rate: null, accepted: 0, total: 0 },
+          offerJoinRatio: ojr.data || { details: [], ratio: null, joined: 0, offered: 0 },
+          ninetyDaysRecruiter: ninety.data || { summary: [], details: [] },
         });
       } catch {
-        toast.error('Failed to load MIS analytics');
+        toast.error('Failed to load MIS');
       } finally {
         setLoading(false);
       }
-    };
+    }
+    load();
+  }, [filters]);
 
-    loadPage();
-  }, []);
+  // Derived
+  const funnelRows = useMemo(
+    () => FUNNEL_STAGES.map((stage) => {
+      const row = ds.funnel.find((r) => r.stage === stage || r.status === stage);
+      return { stage, count: toNumber(row?.count) };
+    }),
+    [ds.funnel]
+  );
+  const totalFunnel = funnelRows.reduce((s, r) => s + r.count, 0);
+  const offerRows = ds.offersTat.filter((r) => r.first_offer_date);
+  const openTatSummary = useMemo(() => buildRangeSummary(ds.openPositionsTat, 'tat_days'), [ds.openPositionsTat]);
+  const offersTatSummary = useMemo(() => buildRangeSummary(offerRows, 'avg_days_to_offer'), [offerRows]);
 
+  const topRecruiters = useMemo(
+    () => [...ds.monthlyOffers].sort((a, b) => toNumber(b.closures) - toNumber(a.closures)).slice(0, 10),
+    [ds.monthlyOffers]
+  );
+
+  // ── Load step TAT ──────────────────────────────────────────────────────
+  async function loadStepTat(entityType = stepEntity) {
+    try {
+      setStepTatLoading(true);
+      const res = await timelineAPI.stepTat({ entity_type: entityType, ...filters });
+      setStepTat(res.data?.pairs || []);
+    } catch {
+      toast.error('Failed to load step TAT');
+    } finally {
+      setStepTatLoading(false);
+    }
+  }
   useEffect(() => {
-    let cancelled = false;
-    const loadGroupSummary = async () => {
-      try {
-        setGroupSummaryLoading(true);
-        const res = await misAPI.drilldownSummary(groupBy);
-        if (!cancelled) {
-          setGroupSummaryRows(res.data?.items || res.data?.data || []);
-        }
-      } catch {
-        if (!cancelled) {
-          setGroupSummaryRows([]);
-        }
-      } finally {
-        if (!cancelled) setGroupSummaryLoading(false);
-      }
-    };
+    if (activeTab === 'steptat') loadStepTat(stepEntity);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, stepEntity]);
 
-    loadGroupSummary();
-    return () => { cancelled = true; };
-  }, [groupBy]);
-
-  const funnelTotal = useMemo(
-    () => datasets.funnel.reduce((sum, row) => sum + toNumber(row.count), 0),
-    [datasets.funnel]
-  );
-  const openTatSummary = useMemo(
-    () => buildTatSummary(datasets.openPositionsTat, 'tat_days'),
-    [datasets.openPositionsTat]
-  );
-  const offersTatSummary = useMemo(
-    () => buildTatSummary(datasets.offersTat.filter((row) => row.first_offer_date), 'avg_days_to_offer'),
-    [datasets.offersTat]
-  );
-
-  const topRecruiterClosers = useMemo(
-    () => [...datasets.monthlyOffers].sort((left, right) => toNumber(right.closures) - toNumber(left.closures)).slice(0, 8),
-    [datasets.monthlyOffers]
-  );
-  const topSourcing = useMemo(
-    () => [...datasets.recruiterSourcing].sort((left, right) => toNumber(right.total) - toNumber(left.total)).slice(0, 8),
-    [datasets.recruiterSourcing]
-  );
-
-  const maxRecruiterClosures = Math.max(...topRecruiterClosers.map((row) => toNumber(row.closures)), 1);
-  const activeGroupLabel = DRILLDOWN_OPTIONS.find(([key]) => key === groupBy)?.[1] || 'Department';
-
-  const showDrilldown = (title, rows) => {
-    setDetailTitle(title);
-    setDetailRows(rows.slice(0, 120));
-    setDrilldownOpen(true);
-  };
-
-  const handleOpenTatRange = (label, groupKey) => {
-    const source = groupKey === 'replacement'
-      ? datasets.openPositionsTat.filter((row) => isReplacement(row))
-      : groupKey === 'newPosition'
-        ? datasets.openPositionsTat.filter((row) => !isReplacement(row))
-        : datasets.openPositionsTat;
-    showDrilldown(`Open Positions TAT | ${label} | ${groupKey === 'overall' ? 'Overall' : groupKey === 'replacement' ? 'Replacement' : 'New Position'}`, source.filter((row) => bucketForDays(row.tat_days) === label));
-  };
-
-  const handleOffersTatRange = (label, groupKey) => {
-    const source = groupKey === 'replacement'
-      ? datasets.offersTat.filter((row) => isReplacement(row))
-      : groupKey === 'newPosition'
-        ? datasets.offersTat.filter((row) => !isReplacement(row))
-        : datasets.offersTat;
-    showDrilldown(`Offers TAT | ${label} | ${groupKey === 'overall' ? 'Overall' : groupKey === 'replacement' ? 'Replacement' : 'New Position'}`, source.filter((row) => bucketForDays(row.avg_days_to_offer) === label));
-  };
-
-  const handleFunnelClick = (stage) => {
-    setActiveFunnelStage(stage);
-    misAPI.drilldownDetails({ group_by: 'department', stage_bucket: stage })
-      .then((res) => showDrilldown(`Funnel Stage | ${stage}`, res.data?.rows || res.data?.items || []))
-      .catch(() => toast.error('Failed to load funnel drilldown'))
-      .finally(() => setActiveFunnelStage(null));
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin h-8 w-8 rounded-full border-b-2 border-indigo-600" />
-      </div>
-    );
+  // ── Raw export ─────────────────────────────────────────────────────────
+  async function loadRaw() {
+    try {
+      setRawLoading(true);
+      const res = await misAPI.rawExport(filters);
+      const rows = res.data?.rows || [];
+      setRawRows(rows);
+      setRawLoaded(true);
+      haptic.success();
+      toast.success(`${rows.length} rows loaded`);
+    } catch {
+      haptic.error();
+      toast.error('Failed to load raw export');
+    } finally {
+      setRawLoading(false);
+    }
   }
 
+  // Executive metrics list
+  const execMetrics = [
+    { label: 'Open requisitions', value: compact(ds.openPositionsTat.length), onClick: () => showDrill('Open requisitions', ds.openPositionsTat) },
+    { label: 'Offers in pipeline', value: compact(offerRows.length), onClick: () => showDrill('Offers in pipeline', offerRows) },
+    { label: 'Avg time to fill', value: days(ds.timeToFill.average_days), onClick: () => showDrill('Time to fill', ds.timeToFill.details) },
+    { label: 'Avg time to join', value: days(ds.timeToJoin.average_days), onClick: () => showDrill('Time to join', ds.timeToJoin.details) },
+    { label: 'Offer acceptance', value: pct(ds.offerAcceptance.rate), note: `${ds.offerAcceptance.accepted}/${ds.offerAcceptance.total}`, onClick: () => showDrill('Offer acceptance', ds.offerAcceptance.details) },
+    { label: 'Offer → join', value: pct(ds.offerJoinRatio.ratio), note: `${ds.offerJoinRatio.joined}/${ds.offerJoinRatio.offered}`, onClick: () => showDrill('Offer to join', ds.offerJoinRatio.details) },
+  ];
+
+  // ── Render ─────────────────────────────────────────────────────────────
   return (
     <div className="workspace-shell">
-      {/* ── Hero ── */}
-      <section className="aurora-panel">
-        <div className="aurora-content grid gap-6 xl:grid-cols-[1.25fr,0.75fr]">
-          <div className="max-w-4xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-200">MIS Reports</p>
-            <h1 className="mt-3 font-['Fraunces'] text-[3rem] leading-[0.94] tracking-[-0.05em] text-white">
-              Hiring operations intelligence shaped for daily review, workbook parity, and live drilldown
-            </h1>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <span className="glass-chip border-white/15 bg-white/10 text-cyan-100">Workbook-parity reports</span>
-              <span className="glass-chip border-white/15 bg-white/10 text-cyan-100">Live drilldowns</span>
-              <span className="glass-chip border-white/15 bg-white/10 text-cyan-100">Offer + join conversion</span>
-            </div>
+      <PageHeader
+        eyebrow="MIS Reports"
+        title="Hiring performance"
+        subtitle="Executive metrics, TAT analysis, recruiter output, backout risk, and a fully filterable raw dataset — every number explained with its working."
+        breadcrumbs={[{ label: 'Home', href: '/' }, { label: 'MIS Reports' }]}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => { if (!rawLoaded) loadRaw(); setActiveTab('raw'); }}
+              className="btn-primary"
+            >
+              Raw data + export
+            </button>
           </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="signal-card">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-100/80">Drilldown Mode</p>
-              <p className="mt-3 text-xl font-semibold tracking-[-0.03em] text-white">Click any stage, range, recruiter, or entity slice</p>
-              </div>
-              <div className="signal-card">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-100/80">Coverage</p>
-              <p className="mt-3 text-xl font-semibold tracking-[-0.03em] text-white">TAT, offers, fill, joins, backouts, sourcing, closures, funnel depth</p>
-              </div>
-            </div>
-          </div>
-      </section>
-
-      {/* ── Top Metrics ── */}
-      <div className="operating-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-        <MetricCard
-          label="Open Positions"
-          value={compactNumber(datasets.openPositionsTat.length)}
-          tip="Total jobs currently open and aging in the pipeline"
-          tone="text-blue-700"
-          accent={METRIC_ACCENTS[0]}
-          onClick={() => showDrilldown('Open Positions', datasets.openPositionsTat.slice(0, 50))}
-        />
-        <MetricCard
-          label="Offers Logged"
-          value={compactNumber(datasets.offersTat.filter((row) => row.first_offer_date).length)}
-          tip="Jobs where a first-offer timestamp has been recorded"
-          tone="text-teal-700"
-          accent={METRIC_ACCENTS[1]}
-          onClick={() => showDrilldown('Offers Logged', datasets.offersTat.filter((r) => r.first_offer_date).slice(0, 50))}
-        />
-        <MetricCard
-          label="Time to Fill"
-          value={datasets.timeToFill.average_days != null ? `${datasets.timeToFill.average_days}d` : '--'}
-          tip="Average days from requisition raised to first offer"
-          tone="text-indigo-700"
-          accent={METRIC_ACCENTS[2]}
-          onClick={() => showDrilldown('Time to Fill Details', datasets.timeToFill.details || [])}
-        />
-        <MetricCard
-          label="Time to Join"
-          value={datasets.timeToJoin.average_days != null ? `${datasets.timeToJoin.average_days}d` : '--'}
-          tip="Average days from offer acceptance to joining date"
-          tone="text-emerald-700"
-          accent={METRIC_ACCENTS[3]}
-          onClick={() => showDrilldown('Time to Join Details', datasets.timeToJoin.details || [])}
-        />
-        <MetricCard
-          label="Offer Acceptance"
-          value={formatPercent(datasets.offerAcceptance.rate)}
-          tip={`${datasets.offerAcceptance.accepted || 0} accepted / ${datasets.offerAcceptance.total || 0} offers`}
-          tone="text-amber-700"
-          accent={METRIC_ACCENTS[4]}
-          onClick={() => showDrilldown('Offer Acceptance Details', datasets.offerAcceptance.details || [])}
-        />
-        <MetricCard
-          label="Offer-to-Join"
-          value={formatPercent(datasets.offerJoinRatio.ratio)}
-          tip={`${datasets.offerJoinRatio.joined || 0} joined / ${datasets.offerJoinRatio.offered || 0} offers`}
-          tone="text-slate-700"
-          accent={METRIC_ACCENTS[5]}
-          onClick={() => showDrilldown('Offer-to-Join Details', datasets.offerJoinRatio.details || [])}
-        />
-      </div>
-
-      {/* ── Funnel ── */}
-      <div className="funnel-board">
-        <div className="flex items-center gap-2 mb-6">
-          <h2 className="section-title">Funnel View</h2>
-          <InfoTip text="Click any stage to drill down into the matching live candidate rows. Widths narrow proportionally by stage." />
-        </div>
-        {!datasets.funnel.length ? (
-          <p className="py-10 text-center text-sm text-gray-400">No funnel data available.</p>
-        ) : (
-          <div className="space-y-3">
-            {FUNNEL_STAGES.map((stage, index) => {
-              const row = datasets.funnel.find((item) => item.stage === stage || item.status === stage);
-              const count = toNumber(row?.count);
-              const widthPct = Math.max(34, 100 - index * 9.5);
-              const isActive = activeFunnelStage === stage;
-              return (
-                <button
-                  key={stage}
-                  type="button"
-                  onClick={() => handleFunnelClick(stage)}
-                  className="block w-full text-left group"
-                >
-                  <div className="mx-auto transition-all duration-300" style={{ width: `${widthPct}%` }}>
-                    <div
-                      className={`relative rounded-[26px] bg-gradient-to-r ${FUNNEL_COLORS[stage]} px-6 py-4 text-white transition-all duration-300 group-hover:scale-[1.015] group-hover:shadow-[0_22px_50px_rgba(15,23,42,0.18)] group-active:scale-[0.99] ${isActive ? 'animate-pulse' : ''}`}
-                      style={{ boxShadow: `0 18px 40px ${FUNNEL_ACCENTS[stage]}22` }}
-                    >
-                      {/* Gradient transition connector */}
-                      {index < FUNNEL_STAGES.length - 1 && (
-                        <div
-                          className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-0 h-0 opacity-40"
-                          style={{
-                            borderLeft: '12px solid transparent',
-                            borderRight: '12px solid transparent',
-                            borderTop: `12px solid ${FUNNEL_ACCENTS[stage]}`,
-                          }}
-                        />
-                      )}
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold uppercase tracking-[0.18em]">{stage}</p>
-                          <p className="mt-1 text-xs text-white/80">
-                            {funnelTotal ? `${Math.round((count / funnelTotal) * 100)}% of tracked` : 'No candidates yet'}
-                          </p>
-                        </div>
-                        <p className="text-2xl font-semibold">{count}</p>
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ── Operational Drilldowns ── */}
-      <section className="workspace-card">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className="flex items-center gap-2">
-            <div>
-              <p className="workspace-kicker">Operational Drilldowns</p>
-              <h2 className="section-title mt-2">Live hiring picture by {activeGroupLabel.toLowerCase()}</h2>
-            </div>
-            <InfoTip text="Inspect demand, offers, interviews, and TAT buildup. Each card opens underlying live ATS rows in a detail panel." />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {DRILLDOWN_OPTIONS.map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setGroupBy(key)}
-                className={groupBy === key ? 'btn-primary' : 'btn-secondary'}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {groupSummaryLoading ? (
-          <div className="flex items-center justify-center py-10">
-            <div className="animate-spin h-6 w-6 rounded-full border-b-2 border-indigo-600" />
-          </div>
-        ) : (
-          <div className="mt-6 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-            {groupSummaryRows.slice(0, 12).map((row, idx) => (
-              <button
-                key={`${groupBy}-${row.group_value}`}
-                type="button"
-                onClick={() => misAPI.drilldownDetails({ group_by: groupBy, group_value: row.group_value }).then((res) => showDrilldown(`${activeGroupLabel} | ${row.group_value}`, res.data?.rows || res.data?.items || [])).catch(() => toast.error('Failed to load drilldown details'))}
-                className={`animate-fade-in-up stagger-${Math.min(idx + 1, 6)} rounded-[28px] border border-gray-200 bg-white p-5 text-left shadow-sm transition-all hover:-translate-y-1 hover:border-indigo-200 hover:bg-indigo-50/50 hover:shadow-md active:scale-[0.98]`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="workspace-kicker">{activeGroupLabel}</p>
-                    <h3 className="mt-2 text-lg font-semibold tracking-[-0.03em] text-gray-950">{row.group_value}</h3>
-                  </div>
-                  <span className="glass-chip text-gray-700">{row.total_candidates} total</span>
-                </div>
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <div className="surface-muted">
-                    <p className="workspace-kicker">Open</p>
-                    <p className="mt-2 text-xl font-semibold text-gray-900">{row.open_count}</p>
-                  </div>
-                  <div className="surface-muted">
-                    <p className="workspace-kicker">Interview</p>
-                    <p className="mt-2 text-xl font-semibold text-gray-900">{row.interview_count}</p>
-                  </div>
-                  <div className="surface-muted">
-                    <p className="workspace-kicker">Offered</p>
-                    <p className="mt-2 text-xl font-semibold text-teal-700">{row.offered_count}</p>
-                  </div>
-                  <div className="surface-muted">
-                    <p className="workspace-kicker">Avg TAT</p>
-                    <p className="mt-2 text-xl font-semibold text-indigo-700">{row.avg_tat_days != null ? `${row.avg_tat_days}d` : '--'}</p>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* ── TAT Panels ── */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="workspace-card">
-          <div className="flex items-center gap-2 mb-4">
-            <h2 className="section-title">Open Positions TAT</h2>
-            <InfoTip text="Aging distribution of open positions, split by overall, replacement, and new positions." />
-          </div>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <RangeSummary title="Overall Open Positions" summary={openTatSummary.overall} onSelect={(range) => handleOpenTatRange(range, 'overall')} />
-            <RangeSummary title="Replacement Positions" summary={openTatSummary.replacement} onSelect={(range) => handleOpenTatRange(range, 'replacement')} />
-            <RangeSummary title="New Positions" summary={openTatSummary.newPosition} onSelect={(range) => handleOpenTatRange(range, 'newPosition')} />
-          </div>
-        </div>
-
-        <div className="workspace-card">
-          <div className="flex items-center gap-2 mb-4">
-            <h2 className="section-title">Offers TAT</h2>
-            <InfoTip text="Time-to-offer distribution, comparing replacement versus new-position pipelines." />
-          </div>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <RangeSummary title="Overall Offers" summary={offersTatSummary.overall} onSelect={(range) => handleOffersTatRange(range, 'overall')} />
-            <RangeSummary title="Replacement Offers" summary={offersTatSummary.replacement} onSelect={(range) => handleOffersTatRange(range, 'replacement')} />
-            <RangeSummary title="New Position Offers" summary={offersTatSummary.newPosition} onSelect={(range) => handleOffersTatRange(range, 'newPosition')} />
-          </div>
-        </div>
-      </div>
-
-      {/* ── Open Positions Detail ── */}
-      <DataTable
-        title="Open Positions Detail"
-        subtitle="Top 20 most-aged open jobs, sorted by TAT descending."
-        data={[...datasets.openPositionsTat].sort((left, right) => toNumber(right.tat_days) - toNumber(left.tat_days)).slice(0, 20)}
-        onRowClick={(row) => showDrilldown(`Open Position | ${row.job_id}`, [row])}
-        exportFileName="open-positions-detail"
-        columns={[
-          { key: 'job_title', label: 'Job Title' },
-          { key: 'job_id', label: 'Job ID' },
-          { key: 'requisition_type', label: 'Type', render: (row) => isReplacement(row) ? 'Replacement' : 'New' },
-          { key: 'phase', label: 'Phase' },
-          { key: 'business_unit', label: 'Entity' },
-          { key: 'department', label: 'Department' },
-          { key: 'sub_department', label: 'Sub Department' },
-          { key: 'recruiter_email', label: 'Recruiter' },
-          { key: 'tat_days', label: 'TAT (Days)' },
-        ]}
-      />
-
-      {/* ── Offers Detail ── */}
-      <DataTable
-        title="Offers Detail"
-        subtitle="Jobs with first-offer movement, sorted by offer TAT descending."
-        data={[...datasets.offersTat].filter((row) => row.first_offer_date).sort((left, right) => toNumber(right.avg_days_to_offer) - toNumber(left.avg_days_to_offer)).slice(0, 20)}
-        onRowClick={(row) => showDrilldown(`Offer TAT | ${row.job_id}`, [row])}
-        exportFileName="offers-detail"
-        columns={[
-          { key: 'job_title', label: 'Job Title' },
-          { key: 'job_id', label: 'Job ID' },
-          { key: 'requisition_type', label: 'Type', render: (row) => isReplacement(row) ? 'Replacement' : 'New' },
-          { key: 'phase', label: 'Phase' },
-          { key: 'department', label: 'Department' },
-          { key: 'recruiter_email', label: 'Recruiter' },
-          { key: 'avg_days_to_offer', label: 'Offers TAT' },
-          { key: 'still_open', label: 'Still Open' },
-        ]}
-      />
-
-      {/* ── Entity + Replacement + New Position Summaries ── */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <DataTable
-          title="Entity / BU / Phase / Department Summary"
-          subtitle="Open, offered, selected, joined, and rejected counts grouped by entity slice."
-          data={datasets.entitySummary.slice(0, 20)}
-          onRowClick={(row) => misAPI.drilldownDetails({ group_by: 'department', group_value: row.department }).then((res) => showDrilldown(`Entity Summary | ${row.department}`, res.data?.rows || res.data?.items || [])).catch(() => toast.error('Failed to load drilldown'))}
-          exportFileName="entity-summary"
-          columns={[
-            { key: 'business_unit', label: 'Entity / BU' },
-            { key: 'phase', label: 'Phase' },
-            { key: 'department', label: 'Department' },
-            { key: 'open_count', label: 'Open' },
-            { key: 'offered_count', label: 'Offered' },
-            { key: 'selected_count', label: 'Selected' },
-            { key: 'joined_count', label: 'Joined' },
-          ]}
-        />
-
-        <div className="grid grid-cols-1 gap-6">
-          <DataTable
-            title="Replacement Summary"
-            subtitle="Unit-wise and department-wise replacement hiring progress."
-            data={datasets.backfillSummary.slice(0, 12)}
-            onRowClick={(row) => showDrilldown(`Replacement Summary | ${row.business_unit || row.phase || row.department}`, [row])}
-            exportFileName="replacement-summary"
-            columns={[
-              { key: 'business_unit', label: 'Entity / BU' },
-              { key: 'phase', label: 'Phase' },
-              { key: 'department', label: 'Department' },
-              { key: 'open_count', label: 'Open' },
-              { key: 'offered_count', label: 'Offered' },
-              { key: 'selected_count', label: 'Selected' },
-            ]}
-          />
-          <DataTable
-            title="New Positions Summary"
-            subtitle="Unit-wise and department-wise new-position hiring progress."
-            data={datasets.newPositionsSummary.slice(0, 12)}
-            onRowClick={(row) => showDrilldown(`New Positions Summary | ${row.business_unit || row.phase || row.department}`, [row])}
-            exportFileName="new-positions-summary"
-            columns={[
-              { key: 'business_unit', label: 'Entity / BU' },
-              { key: 'phase', label: 'Phase' },
-              { key: 'department', label: 'Department' },
-              { key: 'open_count', label: 'Open' },
-              { key: 'offered_count', label: 'Offered' },
-              { key: 'selected_count', label: 'Selected' },
-            ]}
-          />
-        </div>
-      </div>
-
-      {/* ── Recruiter Closers + Sourcing ── */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="workspace-card">
-          <div className="flex items-center gap-2 mb-4">
-            <h2 className="section-title">Monthly Offers Closers by Recruiter</h2>
-            <InfoTip text="Recruiter-wise offer closures and pending joins for the current month." />
-          </div>
-          {topRecruiterClosers.length === 0 ? (
-            <p className="py-8 text-center text-sm text-gray-400">No recruiter closure data available.</p>
-          ) : (
-            <div className="space-y-3">
-              {topRecruiterClosers.map((row, idx) => (
-                <button
-                  key={row.recruiter}
-                  type="button"
-                  onClick={() => showDrilldown(`Recruiter Closures | ${row.recruiter}`, datasets.monthlyOffers.filter((item) => item.recruiter === row.recruiter))}
-                  className={`animate-fade-in-up stagger-${Math.min(idx + 1, 6)} w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:-translate-y-0.5 hover:shadow-sm active:scale-[0.99]`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{row.recruiter}</p>
-                      <p className="mt-1 text-xs text-gray-500">Offers {row.offers || 0} | Closures {row.closures || 0} | Pending {row.pending_joins || 0}</p>
-                    </div>
-                    <div className="w-32 overflow-hidden rounded-full bg-gray-200">
-                      <div
-                        className="h-2 rounded-full bg-gradient-to-r from-indigo-600 to-indigo-400 transition-all duration-500"
-                        style={{ width: `${Math.max(8, Math.round((toNumber(row.closures) / maxRecruiterClosures) * 100))}%` }}
-                      />
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <DataTable
-          title="Recruiter Wise Offers by Sourcing Type"
-          subtitle="LinkedIn, referral, agency, campus, internal, and portal contribution by recruiter."
-          data={topSourcing}
-          onRowClick={(row) => showDrilldown(`Sourcing Mix | ${row.recruiter}`, [row])}
-          exportFileName="recruiter-sourcing"
-          columns={[
-            { key: 'recruiter', label: 'Recruiter' },
-            { key: 'job_portal', label: 'Portal / Direct' },
-            { key: 'referral', label: 'Referral' },
-            { key: 'campus', label: 'Campus' },
-            { key: 'agency', label: 'Agency' },
-            { key: 'internal', label: 'Internal' },
-            { key: 'total', label: 'Total' },
-          ]}
-        />
-      </div>
-
-      {/* ── Selection-to-Offer + Backouts ── */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <DataTable
-          title="Selection to Offer TAT"
-          subtitle="Average lag between final interview completion and first offer event."
-          data={datasets.selectionToOffer.slice(0, 16)}
-          onRowClick={(row) => showDrilldown(`Selection to Offer | ${row.department || row.recruiter_email || 'Summary'}`, [row])}
-          exportFileName="selection-to-offer"
-          columns={[
-            { key: 'department', label: 'Department' },
-            { key: 'recruiter_email', label: 'Recruiter' },
-            { key: 'total', label: 'Profiles' },
-            { key: 'avg_selection_to_offer_days', label: 'Avg Days' },
-            { key: 'min_days', label: 'Min Days' },
-            { key: 'max_days', label: 'Max Days' },
-          ]}
-        />
-
-        <DataTable
-          title="Backouts Summary"
-          subtitle="Withdrawals, offer rejections, and dropouts with reasons."
-          data={(datasets.backoutsSummary.details || []).slice(0, 16)}
-          onRowClick={(row) => showDrilldown(`Backouts | ${row.reason}`, (datasets.backoutsSummary.details || []).filter((item) => item.reason === row.reason))}
-          exportFileName="backouts-summary"
-          columns={[
-            { key: 'reason', label: 'Reason' },
-            { key: 'recruiter', label: 'Recruiter' },
-            { key: 'count', label: 'Count' },
-          ]}
-        />
-      </div>
-
-      {/* ── Drilldown Modal ── */}
-      <AppModal
-        open={drilldownOpen}
-        onClose={() => setDrilldownOpen(false)}
-        title={detailTitle}
-        width="full"
-        footer={
-          detailRows.length > 0 ? (
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-gray-500">{detailRows.length} row{detailRows.length !== 1 ? 's' : ''}</p>
-              <button
-                type="button"
-                onClick={() => exportToExcel(detailRows, `${(detailTitle || 'mis-report').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}.xlsx`)}
-                className="btn-primary inline-flex items-center gap-2"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Export to Excel
-              </button>
-            </div>
-          ) : null
         }
-      >
-        {detailRows.length === 0 ? (
-          <p className="py-12 text-center text-sm text-gray-400">Select a metric, range, or recruiter slice to inspect matching rows.</p>
+      />
+
+      <SectionCard title="Filters" subtitle="All tabs respect the filters below. Leave blank for organisation-wide totals.">
+        <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Date from</label>
+            <input type="date" className="input-field" value={filters.date_from} onChange={(e) => setFilters((p) => ({ ...p, date_from: e.target.value }))} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Date to</label>
+            <input type="date" className="input-field" value={filters.date_to} onChange={(e) => setFilters((p) => ({ ...p, date_to: e.target.value }))} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Recruiter email</label>
+            <input type="text" className="input-field" placeholder="name@premierenergies.com" value={filters.recruiter} onChange={(e) => setFilters((p) => ({ ...p, recruiter: e.target.value }))} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setFilters({ date_from: '', date_to: '', recruiter: '' })}>
+              Reset
+            </button>
+          </div>
+        </div>
+      </SectionCard>
+
+      <div style={{ marginTop: 16 }}>
+        <Tabs tabs={TABS} value={activeTab} onChange={setActiveTab} variant="underline" />
+      </div>
+
+      {loading && activeTab !== 'steptat' && activeTab !== 'raw' && (
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-faint)', fontSize: 13 }}>Loading reports…</div>
+      )}
+
+      {/* ── OVERVIEW ───────────────────────────────────────────────── */}
+      {activeTab === 'overview' && !loading && (
+        <>
+          <div className="stat-grid" style={{ marginTop: 16 }}>
+            {execMetrics.map((m) => (
+              <StatCard
+                key={m.label}
+                label={m.label}
+                value={m.value}
+                delta={m.note}
+                onClick={m.onClick}
+              />
+            ))}
+          </div>
+
+          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', marginTop: 16 }}>
+            <ReportCard
+              title="Candidate funnel"
+              subtitle={`${totalFunnel} candidates tracked across the active pipeline.`}
+              rows={funnelRows}
+              filename="mis-funnel"
+              working={`Counts by application status, grouped into canonical stages.
+SQL: SELECT status, COUNT(*) FROM applications WHERE active_flag = true [+ filters] GROUP BY status
+Stages are mapped as InQueue, Applied, Shortlisted, Interview (Round1/2/3 + AwaitingHOD), Selected, Offered, Joined.`}
+            >
+              <FunnelBars rows={funnelRows} />
+            </ReportCard>
+
+            <ReportCard
+              title="Time to fill vs time to join"
+              subtitle="Two speed reads that matter most to leadership."
+              rows={[
+                { metric: 'Avg days — requisition → first offer', value: ds.timeToFill.average_days },
+                { metric: 'Avg days — offer accepted → joined', value: ds.timeToJoin.average_days },
+                { metric: 'Offer acceptance %', value: ds.offerAcceptance.rate },
+                { metric: 'Offer → join %', value: ds.offerJoinRatio.ratio },
+              ]}
+              filename="mis-speed-reads"
+              working={`Time to fill = AVG(first_offer_date - requisition_created_at) across offered applications.
+Time to join = AVG(joining_date - offer_accepted_at) across joined applications.
+Offer acceptance % = COUNT(status IN OfferAccepted|Joined) / COUNT(OFFER_STATUSES).
+Offer → join % = COUNT(Joined) / COUNT(Offered).
+All four exclude applications where the parent requisition was on_hold during the relevant window (hold time subtracted from denominator).`}
+            >
+              <div style={{ display: 'grid', gap: 10 }}>
+                {[
+                  ['Time to fill', days(ds.timeToFill.average_days), 'var(--accent-blue)'],
+                  ['Time to join', days(ds.timeToJoin.average_days), '#0c8da3'],
+                  ['Offer acceptance', pct(ds.offerAcceptance.rate), 'var(--success-text)'],
+                  ['Offer → join', pct(ds.offerJoinRatio.ratio), '#10b981'],
+                ].map(([label, value, color]) => (
+                  <div key={label} className="flex items-center justify-between" style={{ padding: '10px 14px', border: '1px solid var(--line-subtle)', borderRadius: 'var(--radius-md)', background: 'var(--surface-muted)' }}>
+                    <span style={{ fontSize: 12.5, color: 'var(--text-body)' }}>{label}</span>
+                    <span style={{ fontSize: 18, fontWeight: 700, color, letterSpacing: '-0.02em' }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+            </ReportCard>
+          </div>
+        </>
+      )}
+
+      {/* ── TAT & FUNNEL ──────────────────────────────────────────── */}
+      {activeTab === 'tat' && !loading && (
+        <div style={{ display: 'grid', gap: 16, marginTop: 16 }}>
+          <ReportCard
+            title="Open positions TAT"
+            subtitle="Ageing distribution of currently-open jobs by days since requisition creation."
+            rows={ds.openPositionsTat}
+            filename="mis-open-positions-tat"
+            working={`TAT days = ROUND((NOW() - COALESCE(r.created_at, j.created_at)) / 86400) for each open job.
+Bucketed into 0–30 / 31–60 / 61–90 / 90+ day ranges.
+Split by requisition_type: "Replacement" vs "New Position" (anything else).
+Hold-paused days are excluded if the parent requisition had an active hold window — those seconds are deducted from the TAT before bucketing.`}
+          >
+            <RangeTable
+              summary={openTatSummary}
+              onCellClick={(range, group) => {
+                const src = group === 'replacement'
+                  ? ds.openPositionsTat.filter((r) => /replace/i.test(r.requisition_type || ''))
+                  : group === 'newPosition'
+                    ? ds.openPositionsTat.filter((r) => !/replace/i.test(r.requisition_type || ''))
+                    : ds.openPositionsTat;
+                showDrill(`Open positions · ${range} · ${group}`, src.filter((r) => bucketForDays(r.tat_days) === range));
+              }}
+            />
+          </ReportCard>
+
+          <ReportCard
+            title="Offers TAT"
+            subtitle="Days from requisition creation to first offer, bucketed."
+            rows={offerRows}
+            filename="mis-offers-tat"
+            working={`Only jobs where first_offer_date IS NOT NULL are included.
+avg_days_to_offer = (first_offer_date - requisition_created_at) in days.
+Bucketed identically to open positions TAT. Hold windows excluded.`}
+          >
+            <RangeTable
+              summary={offersTatSummary}
+              onCellClick={(range, group) => {
+                const src = group === 'replacement'
+                  ? offerRows.filter((r) => /replace/i.test(r.requisition_type || ''))
+                  : group === 'newPosition'
+                    ? offerRows.filter((r) => !/replace/i.test(r.requisition_type || ''))
+                    : offerRows;
+                showDrill(`Offers · ${range} · ${group}`, src.filter((r) => bucketForDays(r.avg_days_to_offer) === range));
+              }}
+            />
+          </ReportCard>
+
+          <ReportCard
+            title="Funnel detail"
+            subtitle="Click any stage bar to see the underlying candidate rows."
+            rows={funnelRows}
+            filename="mis-funnel"
+            working="Counts of applications in each canonical funnel stage. Use this view with the Raw Data tab to see which applications sit in each stage."
+          >
+            <FunnelBars rows={funnelRows} />
+          </ReportCard>
+        </div>
+      )}
+
+      {/* ── RECRUITER OUTPUT ──────────────────────────────────────── */}
+      {activeTab === 'recruiter' && !loading && (
+        <div style={{ display: 'grid', gap: 16, marginTop: 16 }}>
+          <ReportCard
+            title="Top recruiters · closures & pending"
+            subtitle="Ranked by closures in the selected window."
+            rows={ds.monthlyOffers}
+            filename="mis-recruiter-monthly"
+            working={`SELECT recruiter_email, COUNT(Joined) AS closures, COUNT(OFFER_STATUSES) - COUNT(Joined) AS pending_joins
+FROM applications GROUP BY recruiter_email ORDER BY closures DESC.
+Only counts applications within the filter window. Hold-paused days are excluded when computing per-recruiter TAT elsewhere.`}
+          >
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table" style={{ width: '100%', minWidth: 640 }}>
+                <thead><tr><th>Recruiter</th><th>Email</th><th style={{ textAlign: 'right' }}>Closures</th><th style={{ textAlign: 'right' }}>Pending joins</th><th>Bar</th></tr></thead>
+                <tbody>
+                  {topRecruiters.map((row) => {
+                    const max = topRecruiters[0]?.closures || 1;
+                    const name = row.recruiter_name || row.recruiter || row.recruiter_email || 'Unassigned';
+                    return (
+                      <tr key={`${row.month || ''}-${row.recruiter_email || row.recruiter}`}>
+                        <td style={{ fontWeight: 600 }}>{name}</td>
+                        <td style={{ color: 'var(--text-faint)', fontSize: 12 }}>{row.recruiter_email || '—'}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{toNumber(row.closures)}</td>
+                        <td style={{ textAlign: 'right', color: 'var(--text-faint)' }}>{toNumber(row.pending_joins)}</td>
+                        <td style={{ width: '30%' }}>
+                          <div style={{ height: 6, background: 'var(--surface-muted)', borderRadius: 999, border: '1px solid var(--line-subtle)' }}>
+                            <div style={{ width: `${(toNumber(row.closures) / toNumber(max)) * 100}%`, height: '100%', background: 'var(--accent-blue)', borderRadius: 999 }} />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </ReportCard>
+
+          <ReportCard
+            title="Sourcing volume by recruiter"
+            subtitle="Total applications added by each recruiter."
+            rows={ds.recruiterSourcing}
+            filename="mis-recruiter-sourcing"
+            working={`SELECT recruiter_email, COUNT(*) AS total FROM applications GROUP BY recruiter_email ORDER BY total DESC.
+Counts every application where recruiter_email is attributed. Uses filters above.`}
+          >
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table" style={{ width: '100%', minWidth: 820 }}>
+                <thead>
+                  <tr>
+                    <th>Recruiter</th>
+                    <th>Email</th>
+                    <th style={{ textAlign: 'right' }}>Job portal</th>
+                    <th style={{ textAlign: 'right' }}>Referral</th>
+                    <th style={{ textAlign: 'right' }}>Campus</th>
+                    <th style={{ textAlign: 'right' }}>Agency</th>
+                    <th style={{ textAlign: 'right' }}>Internal</th>
+                    <th style={{ textAlign: 'right' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ds.recruiterSourcing.slice(0, 20).map((row) => {
+                    const name = row.recruiter_name || row.recruiter || row.recruiter_email || 'Unassigned';
+                    return (
+                      <tr key={row.recruiter_email || row.recruiter}>
+                        <td style={{ fontWeight: 600 }}>{name}</td>
+                        <td style={{ color: 'var(--text-faint)', fontSize: 12 }}>{row.recruiter_email || '—'}</td>
+                        <td style={{ textAlign: 'right' }}>{toNumber(row.job_portal)}</td>
+                        <td style={{ textAlign: 'right' }}>{toNumber(row.referral)}</td>
+                        <td style={{ textAlign: 'right' }}>{toNumber(row.campus)}</td>
+                        <td style={{ textAlign: 'right' }}>{toNumber(row.agency)}</td>
+                        <td style={{ textAlign: 'right' }}>{toNumber(row.internal)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700 }}>{toNumber(row.total)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </ReportCard>
+
+          <ReportCard
+            title="90+ day aged candidates by recruiter"
+            subtitle="Candidates still in active pipeline past 90 days — allocation review."
+            rows={ds.ninetyDaysRecruiter.details || []}
+            filename="mis-ninety-days-recruiter"
+            working={`SELECT a.recruiter_email, a.application_id, a.candidate_name, (NOW() - a.created_at) AS age
+FROM applications a WHERE a.active_flag AND a.status NOT IN (TERMINAL_STATUSES) AND (NOW() - a.created_at) > INTERVAL '90 days'.
+These candidates should be escalated or disposed of — they drag the overall TAT up.`}
+          >
+            {(ds.ninetyDaysRecruiter.details || []).length === 0 ? (
+              <EmptyState title="All candidates within 90 days" description="No aged candidates — healthy pipeline state." />
+            ) : (
+              <p style={{ fontSize: 13, color: 'var(--text-body)', margin: 0 }}>
+                <strong>{ds.ninetyDaysRecruiter.details.length}</strong> candidates aged over 90 days. Open &ldquo;Show working&rdquo; to export the full list.
+              </p>
+            )}
+          </ReportCard>
+        </div>
+      )}
+
+      {/* ── BACKOUTS & RISK ───────────────────────────────────────── */}
+      {activeTab === 'backouts' && !loading && (
+        <div style={{ display: 'grid', gap: 16, marginTop: 16 }}>
+          <ReportCard
+            title="Backout reasons"
+            subtitle="Where candidates drop out and why."
+            rows={ds.backoutsSummary?.details || []}
+            filename="mis-backouts"
+            working={`SELECT dropout_reason AS reason, COUNT(*) AS count FROM applications
+WHERE status IN ('OfferDropout','Withdrawn') AND dropout_reason IS NOT NULL
+GROUP BY dropout_reason ORDER BY count DESC.
+Shows top concentrated reasons for drop-out so HR can design interventions.`}
+          >
+            {(ds.backoutsSummary?.details || []).length === 0 ? (
+              <EmptyState title="No backouts recorded" description="Either no dropouts or dropout_reason not yet captured." />
+            ) : (
+              <div style={{ display: 'grid', gap: 8 }}>
+                {ds.backoutsSummary.details.slice(0, 10).map((row) => (
+                  <div key={row.reason} className="flex items-center justify-between" style={{ padding: '10px 14px', background: 'var(--surface-muted)', border: '1px solid var(--line-subtle)', borderRadius: 'var(--radius-sm)' }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-main)' }}>{row.reason}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--warning-text)' }}>{toNumber(row.count)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ReportCard>
+        </div>
+      )}
+
+      {/* ── STEP TAT EXPLORER ─────────────────────────────────────── */}
+      {activeTab === 'steptat' && (
+        <div style={{ marginTop: 16 }}>
+          <SectionCard
+            title="Step TAT explorer"
+            subtitle="Average days between every consecutive event type, across every entity in the system. Hold-paused transitions are excluded."
+            actions={
+              <div className="flex items-center gap-2">
+                <select className="input-field" value={stepEntity} onChange={(e) => setStepEntity(e.target.value)} style={{ minWidth: 160 }}>
+                  <option value="application">Applications</option>
+                  <option value="requisition">Requisitions</option>
+                  <option value="job">Jobs</option>
+                  <option value="clearance">Clearance</option>
+                  <option value="document">Documents</option>
+                </select>
+                <button type="button" onClick={() => loadStepTat()} className="btn-secondary btn-sm" disabled={stepTatLoading}>
+                  {stepTatLoading ? 'Loading…' : 'Reload'}
+                </button>
+                {stepTat.length > 0 && (
+                  <button type="button" onClick={() => exportToExcel(stepTat, `step-tat-${stepEntity}.xlsx`)} className="btn-primary btn-sm">
+                    Export .xlsx
+                  </button>
+                )}
+              </div>
+            }
+          >
+            {stepTatLoading ? (
+              <p style={{ fontSize: 13, color: 'var(--text-faint)', padding: 20 }}>Computing step TAT…</p>
+            ) : stepTat.length === 0 ? (
+              <EmptyState title="No step pairs yet" description="Events will populate as actions happen. New events are logged automatically." />
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="data-table" style={{ width: '100%', minWidth: 720 }}>
+                  <thead>
+                    <tr>
+                      <th>Step pair (from → to)</th>
+                      <th style={{ textAlign: 'right' }}>Count</th>
+                      <th style={{ textAlign: 'right' }}>Avg days</th>
+                      <th style={{ textAlign: 'right' }}>Min</th>
+                      <th style={{ textAlign: 'right' }}>Max</th>
+                      <th>Spread</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stepTat.map((row) => {
+                      const max = stepTat[0]?.avg_days || 1;
+                      return (
+                        <tr key={row.pair}>
+                          <td style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12, wordBreak: 'break-word' }}>{row.pair}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 600 }}>{row.count}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent-blue)' }}>{row.avg_days}</td>
+                          <td style={{ textAlign: 'right', color: 'var(--text-faint)' }}>{row.min_days}</td>
+                          <td style={{ textAlign: 'right', color: 'var(--text-faint)' }}>{row.max_days}</td>
+                          <td style={{ width: '20%' }}>
+                            <div style={{ height: 6, background: 'var(--surface-muted)', borderRadius: 999, border: '1px solid var(--line-subtle)' }}>
+                              <div style={{ width: `${Math.min(100, (row.avg_days / max) * 100)}%`, height: '100%', background: 'var(--accent-blue)', borderRadius: 999 }} />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 12, lineHeight: 1.6 }}>
+              <strong>Working:</strong> For each entity of the selected type, we walk its timeline chronologically and compute the gap between every consecutive event. We group gaps by (previous event type → current event type) and report average, min, and max. Events that fell entirely inside a requisition hold window are dropped from the calculation so holds don&rsquo;t pollute TAT.
+            </p>
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ── RAW DATA ──────────────────────────────────────────────── */}
+      {activeTab === 'raw' && (
+        <div style={{ marginTop: 16 }}>
+          <SectionCard
+            title="Raw data export"
+            subtitle="One row per application with ~90 columns spanning requisition creation through current state. Respects the filters above. Capped at 5000 rows."
+            actions={
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" className="btn-secondary btn-sm" onClick={loadRaw} disabled={rawLoading}>
+                  {rawLoading ? 'Loading…' : rawLoaded ? 'Reload' : 'Load data'}
+                </button>
+                {rawRows.length > 0 && (
+                  <button type="button" className="btn-primary btn-sm" onClick={() => exportToExcel(rawRows, `mis-raw-${new Date().toISOString().slice(0, 10)}.xlsx`)}>
+                    Download .xlsx ({rawRows.length})
+                  </button>
+                )}
+              </div>
+            }
+          >
+            {!rawLoaded ? (
+              <EmptyState title="Click Load data to populate" description="Heavy query — kept out of initial page load. Use filters to narrow before loading." />
+            ) : rawRows.length === 0 ? (
+              <EmptyState title="No rows match filters" description="Widen the date range or clear recruiter filter." />
+            ) : (
+              <DataTable
+                title="Raw data"
+                subtitle={`${rawRows.length} rows · ${Object.keys(rawRows[0]).length} columns · scroll horizontally to browse all columns.`}
+                data={rawRows}
+                exportFileName="mis-raw-export"
+                columns={Object.keys(rawRows[0]).map((key) => ({ key, label: key }))}
+              />
+            )}
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ── Drilldown Modal ───────────────────────────────────────── */}
+      <AppModal open={drillOpen} onClose={() => setDrillOpen(false)} title={drillTitle} width="full">
+        {drillRows.length === 0 ? (
+          <p style={{ padding: '30px 0', textAlign: 'center', color: 'var(--text-faint)', fontSize: 13 }}>No rows in this slice.</p>
         ) : (
           <DataTable
-            title={detailTitle}
-            subtitle="Use the built-in search, per-column filters, selection, export, and column visibility controls to inspect the clicked segment."
-            data={detailRows}
-            exportFileName={(detailTitle || 'mis-report').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}
-            columns={Object.keys(detailRows[0]).slice(0, 12).map((key) => ({
-              key,
-              label: key.replace(/_/g, ' '),
-            }))}
+            title={drillTitle}
+            subtitle={`${drillRows.length} row${drillRows.length === 1 ? '' : 's'} — use search, sort, column visibility, and export.`}
+            data={drillRows}
+            exportFileName={(drillTitle || 'mis-drilldown').replace(/[^a-z0-9]/gi, '-').toLowerCase()}
+            columns={Object.keys(drillRows[0]).slice(0, 18).map((key) => ({ key, label: key.replace(/_/g, ' ') }))}
           />
         )}
       </AppModal>

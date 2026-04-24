@@ -30,6 +30,9 @@ import notificationRoutes from "./routes/notifications.js";
 import demoRoutes from "./routes/demo.js";
 import orgRoutes from "./routes/org.js";
 import clearanceRoutes from "./routes/clearance.js";
+import timelineRoutes from "./routes/timeline.js";
+import requisitionHoldsRoutes from "./routes/requisitionHolds.js";
+import candidatePortalRoutes from "./routes/candidatePortal.js";
 import { authMiddleware } from "./middleware/auth.js";
 
 const app = express();
@@ -65,6 +68,9 @@ app.use("/api/notifications", authMiddleware, notificationRoutes);
 app.use("/api/demo", authMiddleware, demoRoutes);
 app.use("/api/org", authMiddleware, orgRoutes);
 app.use("/api/candidates", authMiddleware, clearanceRoutes);
+app.use("/api/timeline", authMiddleware, timelineRoutes);
+app.use("/api/requisition-holds", authMiddleware, requisitionHoldsRoutes);
+app.use("/api/candidate-portal", authMiddleware, candidatePortalRoutes);
 
 // Health check
 app.get("/api/health", async (_req, res) => {

@@ -601,15 +601,18 @@ router.get('/monthly-offers', adminOrRecruiter, async (req, res) => {
     const result = await pool.query(`
       SELECT
         TO_CHAR(COALESCE(a.joining_date::timestamp, a.updated_at, a.created_at), 'YYYY-MM') as month,
-        COALESCE(a.recruiter_email, 'Unassigned') as recruiter,
+        COALESCE(a.recruiter_email, 'Unassigned') as recruiter_email,
+        COALESCE(u.name, a.recruiter_email, 'Unassigned') as recruiter_name,
+        COALESCE(u.name, a.recruiter_email, 'Unassigned') as recruiter,
         COUNT(*) FILTER (WHERE a.status IN ('OfferInProcess','Offered','OfferAccepted','OfferRejected','OfferDropout','Joined')) as offers,
         COUNT(*) FILTER (WHERE a.status = 'Joined') as closures,
         COUNT(*) FILTER (WHERE a.status = 'OfferAccepted') as pending_joins,
         COUNT(*) FILTER (WHERE a.status IN ('OfferRejected', 'OfferDropout')) as backouts
       FROM applications a
       LEFT JOIN jobs j ON a.ats_job_id = j.job_id
+      LEFT JOIN users u ON LOWER(u.email) = LOWER(a.recruiter_email)
       ${whereClause}
-      GROUP BY TO_CHAR(COALESCE(a.joining_date::timestamp, a.updated_at, a.created_at), 'YYYY-MM'), COALESCE(a.recruiter_email, 'Unassigned')
+      GROUP BY TO_CHAR(COALESCE(a.joining_date::timestamp, a.updated_at, a.created_at), 'YYYY-MM'), a.recruiter_email, u.name
       ORDER BY month DESC, offers DESC
     `, params);
 
@@ -763,17 +766,21 @@ router.get('/recruiter-sourcing', adminOrRecruiter, async (req, res) => {
 
     const result = await pool.query(`
       SELECT
-        COALESCE(a.recruiter_email, 'Unassigned') as recruiter,
+        COALESCE(a.recruiter_email, 'Unassigned') as recruiter_email,
+        COALESCE(u.name, a.recruiter_email, 'Unassigned') as recruiter_name,
+        COALESCE(u.name, a.recruiter_email, 'Unassigned') as recruiter,
         COUNT(*) FILTER (WHERE COALESCE(a.source, '') IN ('LinkedIn', 'Naukri', 'Indeed', 'Company Website', 'Walk-in', 'Direct', 'Other')) as job_portal,
         COUNT(*) FILTER (WHERE COALESCE(a.source, '') = 'Employee Referral') as referral,
         COUNT(*) FILTER (WHERE COALESCE(a.source, '') ILIKE '%campus%') as campus,
         COUNT(*) FILTER (WHERE COALESCE(a.source, '') IN ('Consultant', 'Agency')) as agency,
         COUNT(*) FILTER (WHERE COALESCE(a.source, '') IN ('Internal', 'Employee Apply')) as internal,
+        COUNT(*) FILTER (WHERE COALESCE(a.source, '') NOT IN ('LinkedIn','Naukri','Indeed','Company Website','Walk-in','Direct','Other','Employee Referral','Consultant','Agency','Internal','Employee Apply') OR a.source IS NULL OR a.source ILIKE '%campus%') as other_unknown,
         COUNT(*) as total
       FROM applications a
       LEFT JOIN jobs j ON a.ats_job_id = j.job_id
+      LEFT JOIN users u ON LOWER(u.email) = LOWER(a.recruiter_email)
       ${whereClause}
-      GROUP BY COALESCE(a.recruiter_email, 'Unassigned')
+      GROUP BY a.recruiter_email, u.name
       ORDER BY total DESC
     `, params);
 
@@ -1181,6 +1188,444 @@ router.get('/dashboard', adminOrRecruiter, async (req, res) => {
     });
   } catch (err) {
     console.error('Dashboard error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /tat-phases - TAT metrics per phase: requisition, approval by person, job creation, candidate milestones
+router.get('/tat-phases', adminOrRecruiter, async (req, res) => {
+  try {
+    const { date_from, date_to, business_unit_id, department_id } = req.query;
+
+    const filters = [];
+    const params = [];
+    if (date_from) { params.push(date_from); filters.push(`r.created_at >= $${params.length}`); }
+    if (date_to) { params.push(date_to); filters.push(`r.created_at <= $${params.length}`); }
+    if (business_unit_id) { params.push(business_unit_id); filters.push(`r.business_unit_id = $${params.length}`); }
+    if (department_id) { params.push(department_id); filters.push(`r.department_id = $${params.length}`); }
+    const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : 'WHERE 1=1';
+
+    // 1. Requisition creation to approval TAT
+    const reqTatResult = await pool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE r.status = 'approved') AS approved_count,
+        ROUND(AVG(
+          CASE WHEN r.approved_at IS NOT NULL AND r.submitted_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (r.approved_at - r.submitted_at)) / 3600
+          END
+        )::numeric, 1) AS avg_req_to_approval_hours,
+        ROUND(AVG(
+          CASE WHEN r.approved_at IS NOT NULL AND r.created_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (r.approved_at - r.created_at)) / 86400
+          END
+        )::numeric, 1) AS avg_req_to_approval_days,
+        ROUND(MIN(
+          CASE WHEN r.approved_at IS NOT NULL AND r.submitted_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (r.approved_at - r.submitted_at)) / 86400
+          END
+        )::numeric, 1) AS min_req_to_approval_days,
+        ROUND(MAX(
+          CASE WHEN r.approved_at IS NOT NULL AND r.submitted_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (r.approved_at - r.submitted_at)) / 86400
+          END
+        )::numeric, 1) AS max_req_to_approval_days
+      FROM requisitions r
+      ${whereClause}
+        AND r.active_flag = true
+    `, params);
+
+    // 2. Approval TAT by individual approver
+    const approverTatResult = await pool.query(`
+      SELECT
+        ra.approver_email,
+        ra.approver_name,
+        ra.approval_stage,
+        COUNT(*) AS total_approvals,
+        ROUND(AVG(
+          CASE WHEN ra.acted_at IS NOT NULL AND ra.created_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (ra.acted_at - ra.created_at)) / 3600
+          END
+        )::numeric, 1) AS avg_response_hours,
+        ROUND(MIN(
+          CASE WHEN ra.acted_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (ra.acted_at - ra.created_at)) / 3600
+          END
+        )::numeric, 1) AS min_response_hours,
+        ROUND(MAX(
+          CASE WHEN ra.acted_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (ra.acted_at - ra.created_at)) / 3600
+          END
+        )::numeric, 1) AS max_response_hours
+      FROM requisition_approvals ra
+      JOIN requisitions r ON r.id = ra.requisition_id
+      ${whereClause.replace(/r\./g, 'r.')}
+        AND r.active_flag = true
+        AND ra.status IN ('approved', 'rejected')
+      GROUP BY ra.approver_email, ra.approver_name, ra.approval_stage
+      ORDER BY avg_response_hours DESC NULLS LAST
+    `, params);
+
+    // 3. Approved requisition to job creation TAT
+    const jobCreationTatResult = await pool.query(`
+      SELECT
+        COUNT(DISTINCT j.job_id) AS jobs_created,
+        ROUND(AVG(
+          CASE WHEN j.created_at IS NOT NULL AND r.approved_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (j.created_at - r.approved_at)) / 86400
+          END
+        )::numeric, 1) AS avg_approval_to_job_days,
+        ROUND(MIN(
+          CASE WHEN j.created_at IS NOT NULL AND r.approved_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (j.created_at - r.approved_at)) / 86400
+          END
+        )::numeric, 1) AS min_approval_to_job_days,
+        ROUND(MAX(
+          CASE WHEN j.created_at IS NOT NULL AND r.approved_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (j.created_at - r.approved_at)) / 86400
+          END
+        )::numeric, 1) AS max_approval_to_job_days
+      FROM jobs j
+      JOIN requisitions r ON j.requisition_id = r.id
+      ${whereClause.replace(/r\.created_at/g, 'j.created_at').replace(/r\.business_unit_id/g, 'j.business_unit_id').replace(/r\.department_id/g, 'j.department_id')}
+        AND r.active_flag = true
+        AND j.active_flag = true
+    `, params);
+
+    // 4. Candidate milestone TAT (1st, 5th, 10th candidate per job)
+    const candidateMilestoneTatResult = await pool.query(`
+      WITH ranked_candidates AS (
+        SELECT
+          a.ats_job_id,
+          j.job_title,
+          a.created_at,
+          j.created_at AS job_created_at,
+          ROW_NUMBER() OVER (PARTITION BY a.ats_job_id ORDER BY a.created_at ASC) AS candidate_rank
+        FROM applications a
+        JOIN jobs j ON a.ats_job_id = j.job_id
+        WHERE a.active_flag = true AND j.active_flag = true
+      ),
+      milestones AS (
+        SELECT
+          ats_job_id,
+          job_title,
+          job_created_at,
+          MAX(CASE WHEN candidate_rank = 1 THEN created_at END) AS first_candidate_at,
+          MAX(CASE WHEN candidate_rank = 5 THEN created_at END) AS fifth_candidate_at,
+          MAX(CASE WHEN candidate_rank = 10 THEN created_at END) AS tenth_candidate_at,
+          MAX(candidate_rank) AS total_candidates
+        FROM ranked_candidates
+        GROUP BY ats_job_id, job_title, job_created_at
+      )
+      SELECT
+        COUNT(*) AS total_jobs,
+        ROUND(AVG(
+          CASE WHEN first_candidate_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (first_candidate_at - job_created_at)) / 86400
+          END
+        )::numeric, 1) AS avg_days_to_first_candidate,
+        ROUND(AVG(
+          CASE WHEN fifth_candidate_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (fifth_candidate_at - job_created_at)) / 86400
+          END
+        )::numeric, 1) AS avg_days_to_fifth_candidate,
+        ROUND(AVG(
+          CASE WHEN tenth_candidate_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (tenth_candidate_at - job_created_at)) / 86400
+          END
+        )::numeric, 1) AS avg_days_to_tenth_candidate,
+        COUNT(*) FILTER (WHERE first_candidate_at IS NOT NULL) AS jobs_with_first_candidate,
+        COUNT(*) FILTER (WHERE fifth_candidate_at IS NOT NULL) AS jobs_with_fifth_candidate,
+        COUNT(*) FILTER (WHERE tenth_candidate_at IS NOT NULL) AS jobs_with_tenth_candidate
+      FROM milestones
+    `);
+
+    // 5. Per-job milestone breakdown (top 20 most recent)
+    const perJobMilestonesResult = await pool.query(`
+      WITH ranked_candidates AS (
+        SELECT
+          a.ats_job_id,
+          j.job_title,
+          j.created_at AS job_created_at,
+          a.created_at,
+          ROW_NUMBER() OVER (PARTITION BY a.ats_job_id ORDER BY a.created_at ASC) AS candidate_rank
+        FROM applications a
+        JOIN jobs j ON a.ats_job_id = j.job_id
+        WHERE a.active_flag = true AND j.active_flag = true
+      )
+      SELECT
+        ats_job_id,
+        job_title,
+        job_created_at,
+        MAX(CASE WHEN candidate_rank = 1 THEN ROUND(EXTRACT(EPOCH FROM (created_at - job_created_at)) / 86400, 1) END) AS days_to_1st,
+        MAX(CASE WHEN candidate_rank = 5 THEN ROUND(EXTRACT(EPOCH FROM (created_at - job_created_at)) / 86400, 1) END) AS days_to_5th,
+        MAX(CASE WHEN candidate_rank = 10 THEN ROUND(EXTRACT(EPOCH FROM (created_at - job_created_at)) / 86400, 1) END) AS days_to_10th,
+        MAX(candidate_rank) AS total_candidates
+      FROM ranked_candidates
+      GROUP BY ats_job_id, job_title, job_created_at
+      ORDER BY job_created_at DESC
+      LIMIT 20
+    `);
+
+    res.json({
+      requisition_tat: reqTatResult.rows[0] || {},
+      approval_tat_by_person: approverTatResult.rows,
+      job_creation_tat: jobCreationTatResult.rows[0] || {},
+      candidate_milestone_tat: candidateMilestoneTatResult.rows[0] || {},
+      per_job_milestones: perJobMilestonesResult.rows,
+    });
+  } catch (err) {
+    console.error('TAT phases error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /ninety-days-recruiter - Open positions > 90 days TAT grouped by recruiter (matches Excel "Summary" sheet)
+router.get('/ninety-days-recruiter', adminOrRecruiter, async (req, res) => {
+  try {
+    const { whereClause, params } = buildFilters(req.query);
+    const jobWhereClause = buildJobLevelFilters(whereClause);
+
+    const summary = await pool.query(`
+      SELECT
+        COALESCE(j.recruiter_email, 'Unassigned') AS recruiter,
+        COUNT(*) AS count
+      FROM jobs j
+      LEFT JOIN requisitions r ON j.requisition_id = r.id
+      ${jobWhereClause}
+        AND j.status = 'open'
+        AND j.active_flag = true
+        AND ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(r.created_at, j.created_at))) / 86400) > 90
+      GROUP BY COALESCE(j.recruiter_email, 'Unassigned')
+      ORDER BY count DESC
+    `, params);
+
+    const details = await pool.query(`
+      SELECT
+        j.job_id,
+        j.job_title,
+        j.requisition_type,
+        j.job_type,
+        j.total_positions,
+        COALESCE(bu.bu_name, 'Unassigned') AS company,
+        COALESCE(p.phase_name, 'Unassigned') AS phase,
+        COALESCE(d.department_name, 'Unassigned') AS department,
+        COALESCE(sd.sub_department_name, 'Unassigned') AS sub_department,
+        COALESCE(l.location_name, 'Unassigned') AS branch,
+        COALESCE(j.recruiter_email, 'Unassigned') AS recruiter,
+        COALESCE(r.created_at, j.created_at) AS position_opened_on,
+        ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(r.created_at, j.created_at))) / 86400) AS tat_days,
+        j.status
+      FROM jobs j
+      LEFT JOIN requisitions r ON j.requisition_id = r.id
+      LEFT JOIN business_units bu ON j.business_unit_id = bu.id
+      LEFT JOIN locations l ON j.location_id = l.id
+      LEFT JOIN phases p ON j.phase_id = p.id
+      LEFT JOIN departments d ON j.department_id = d.id
+      LEFT JOIN sub_departments sd ON j.sub_department_id = sd.id
+      ${jobWhereClause}
+        AND j.status = 'open'
+        AND j.active_flag = true
+        AND ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(r.created_at, j.created_at))) / 86400) > 90
+      ORDER BY tat_days DESC
+    `, params);
+
+    res.json({ summary: summary.rows, details: details.rows });
+  } catch (err) {
+    console.error('Ninety days recruiter error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /detailed-open-positions - Full open positions list matching Excel Factory Open Positions format
+router.get('/detailed-open-positions', adminOrRecruiter, async (req, res) => {
+  try {
+    const { whereClause, params } = buildFilters(req.query);
+    const jobWhereClause = buildJobLevelFilters(whereClause);
+
+    const result = await pool.query(`
+      SELECT
+        j.job_title AS "Job Title",
+        j.job_id AS "Job ID",
+        j.requisition_type AS "New/Replacement",
+        j.job_type AS "Permanent/Contractual",
+        j.total_positions AS "Number of Openings",
+        COALESCE(p.phase_name, '') AS "Phase",
+        COALESCE(bu.bu_name, '') AS "Company",
+        COALESCE(d.department_name, '') AS "Department",
+        COALESCE(sd.sub_department_name, '') AS "Sub Department",
+        COALESCE(des.designation, '') AS "Designation",
+        COALESCE(l.location_name, '') AS "Branch",
+        COALESCE(j.recruiter_email, '') AS "Recruiter",
+        COALESCE(r.created_at, j.created_at) AS "Position Opened On",
+        ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(r.created_at, j.created_at))) / 86400) AS "TAT",
+        j.status AS "Status"
+      FROM jobs j
+      LEFT JOIN requisitions r ON j.requisition_id = r.id
+      LEFT JOIN business_units bu ON j.business_unit_id = bu.id
+      LEFT JOIN locations l ON j.location_id = l.id
+      LEFT JOIN phases p ON j.phase_id = p.id
+      LEFT JOIN departments d ON j.department_id = d.id
+      LEFT JOIN sub_departments sd ON j.sub_department_id = sd.id
+      LEFT JOIN designations des ON des.id = (
+        SELECT id FROM designations LIMIT 1
+      )
+      ${jobWhereClause} AND j.active_flag = true AND j.status NOT IN ('closed', 'archived')
+      ORDER BY "TAT" DESC
+    `, params);
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Detailed open positions error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Raw export: one row per application with every field from requisition
+// creation through current state — requisition, job, candidate, application,
+// interview feedback, clearance, offer, join. Used by "Raw Data" tab for
+// MIS exports. Every field is exposed as a column; nested JSON is flattened
+// to comma-separated scalars where useful.
+// ───────────────────────────────────────────────────────────────────────────
+router.get('/raw-export', adminOrRecruiter, async (req, res) => {
+  try {
+    const { whereClause, params } = buildFilters(req.query);
+
+    const sql = `
+      SELECT
+        -- Requisition
+        r.requisition_id        AS "Requisition ID",
+        r.job_title             AS "Requisition Title",
+        r.priority              AS "Priority",
+        r.requisition_type      AS "Requisition Type",
+        r.job_type              AS "Employment Type",
+        r.experience_years      AS "Experience (yrs)",
+        r.total_positions       AS "Positions",
+        r.start_hire_date       AS "Hire Window Start",
+        r.target_hire_date      AS "Hire Window Target",
+        r.created_by            AS "Requisition Created By",
+        r.created_at            AS "Requisition Created At",
+        r.submitted_by          AS "Requisition Submitted By",
+        r.submitted_at          AS "Requisition Submitted At",
+        r.current_approval_stage AS "Approval Stage",
+        r.cxo_approval_required AS "CXO Approval Required",
+        r.approved_by           AS "Approved By",
+        r.approved_at           AS "Approved At",
+        r.assigned_recruiter_email AS "Assigned Recruiter",
+        r.assigned_recruiter_assigned_at AS "Assigned Recruiter At",
+        r.approval_comments     AS "Approval Comments",
+
+        -- Org / taxonomy
+        bu.bu_name              AS "Business Unit",
+        d.department_name       AS "Department",
+        sd.sub_department_name  AS "Sub Department",
+        l.location_name         AS "Location",
+        p.phase_name            AS "Phase",
+        g.grade                 AS "Grade",
+        lv.level                AS "Level",
+
+        -- Job
+        j.job_id                AS "Job ID",
+        j.job_title             AS "Job Title",
+        j.status                AS "Job Status",
+        j.number_of_positions   AS "Job Positions",
+        j.compensation_currency AS "Currency",
+        j.compensation_min      AS "Comp Min",
+        j.compensation_max      AS "Comp Max",
+        j.recruiter_email       AS "Job Recruiter",
+        j.publish_to_careers    AS "Published",
+        j.allow_employee_apply  AS "Internal Apply",
+        j.allow_employee_refer  AS "Referral Open",
+        j.created_at            AS "Job Created At",
+
+        -- Application / candidate
+        a.application_id        AS "Application ID",
+        a.status                AS "Application Status",
+        a.candidate_name        AS "Candidate Name",
+        a.candidate_email       AS "Candidate Email",
+        a.candidate_phone       AS "Candidate Phone",
+        a.candidate_age         AS "Candidate Age",
+        a.candidate_gender      AS "Candidate Gender",
+        a.candidate_years_of_experience AS "Candidate Experience",
+        a.current_organization  AS "Current Employer",
+        a.current_ctc           AS "Current CTC",
+        a.current_location      AS "Current Location",
+        a.willing_to_relocate   AS "Relocation",
+        a.education_level       AS "Education",
+        a.source                AS "Source",
+        a.referrer_emp_id       AS "Referrer",
+        a.consultant_code       AS "Consultant",
+        a.referral_flag         AS "Is Referral",
+        a.resume_flag           AS "Resume Uploaded",
+        a.resume_file_name      AS "Resume File",
+        a.recruiter_email       AS "App Recruiter",
+        a.talent_pool_only      AS "Pool Only",
+        a.talent_pool_expires_at AS "Pool Expires",
+        a.banned_flag           AS "Banned",
+        a.ban_scope             AS "Ban Scope",
+        a.banned_reason         AS "Ban Reason",
+        a.created_at            AS "Application Created At",
+        a.updated_at            AS "Application Updated At",
+
+        -- Interview
+        a.no_of_rounds          AS "Planned Rounds",
+        a.suggested_interview_datetime1 AS "Interview Slot 1",
+        a.suggested_interview_datetime2 AS "Interview Slot 2",
+        a.interviewer_technical_score AS "Tech Score",
+        a.interviewer_behavioral_score AS "Behavioral Score",
+        a.interviewer_company_fit_score AS "Fit Score",
+        a.interviewer_final_decision AS "Final Decision",
+        a.interviewer_feedback_remarks AS "Feedback Remarks",
+
+        -- Offer / join
+        a.joining_date          AS "Joining Date",
+        a.rejected_by_email     AS "Rejected By",
+        a.rejection_reason      AS "Rejection Reason",
+        a.dropout_reason        AS "Dropout Reason",
+
+        -- Clearance
+        cc.status               AS "Clearance Status",
+        cc.primary_cleared_by   AS "Primary Cleared By",
+        cc.primary_cleared_at   AS "Primary Cleared At",
+        cc.secondary_cleared_by AS "Secondary Cleared By",
+        cc.secondary_cleared_at AS "Secondary Cleared At",
+        cc.hr_action            AS "HR Action",
+        cc.hr_action_by         AS "HR Action By",
+        cc.hr_action_at         AS "HR Action At",
+        cc.hr_comments          AS "HR Comments",
+        cc.cxo_email            AS "CXO Approver",
+        cc.cxo_action           AS "CXO Decision",
+        cc.cxo_action_at        AS "CXO Decision At",
+        cc.cxo_comments         AS "CXO Comments",
+        cc.aop_inline           AS "AOP Inline",
+        cc.aop_exceeded_amount  AS "AOP Exceeded Amount",
+        cc.renegotiation_count  AS "Renegotiations",
+        cc.ctc_data             AS "CTC Data (JSON)",
+
+        -- Timing
+        ROUND(EXTRACT(EPOCH FROM (NOW() - r.created_at)) / 86400)                   AS "Days Since Req",
+        ROUND(EXTRACT(EPOCH FROM (a.created_at - r.created_at)) / 86400)            AS "Req → Applied (days)",
+        ROUND(EXTRACT(EPOCH FROM (a.joining_date::timestamp - a.created_at)) / 86400) AS "Applied → Joined (days)"
+      FROM applications a
+      JOIN jobs j ON j.job_id = a.ats_job_id
+      LEFT JOIN requisitions r ON j.requisition_id = r.id
+      LEFT JOIN business_units bu ON j.business_unit_id = bu.id
+      LEFT JOIN departments d ON j.department_id = d.id
+      LEFT JOIN sub_departments sd ON j.sub_department_id = sd.id
+      LEFT JOIN locations l ON j.location_id = l.id
+      LEFT JOIN phases p ON j.phase_id = p.id
+      LEFT JOIN grades g ON j.grade_id = g.id
+      LEFT JOIN levels lv ON j.level_id = lv.id
+      LEFT JOIN candidate_clearance cc ON cc.application_id = a.id
+      ${whereClause}
+      ORDER BY a.created_at DESC
+      LIMIT 5000
+    `;
+
+    const result = await pool.query(sql, params);
+    res.json({ rows: result.rows, count: result.rowCount });
+  } catch (err) {
+    console.error('Raw export error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

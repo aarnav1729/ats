@@ -170,6 +170,10 @@ export const misAPI = {
   offerJoinRatio: (params) => api.get('/mis/offer-join-ratio', { params }),
   dashboard: (params) => api.get('/mis/dashboard', { params }),
   assistant: (data) => api.post('/mis/assistant', data),
+  tatPhases: (params) => api.get('/mis/tat-phases', { params }),
+  ninetyDaysRecruiter: (params) => api.get('/mis/ninety-days-recruiter', { params }),
+  detailedOpenPositions: (params) => api.get('/mis/detailed-open-positions', { params }),
+  rawExport: (params) => api.get('/mis/raw-export', { params }),
 };
 
 // Notifications
@@ -178,6 +182,7 @@ export const notificationsAPI = {
   markRead: (id) => api.put(`/notifications/${id}/read`),
   markAllRead: () => api.put('/notifications/read-all'),
   draftEmail: (data) => api.post('/notifications/draft-email', data),
+  sendEmail: (data) => api.post('/notifications/send-email', data),
 };
 
 // Org / CXO Directory
@@ -185,6 +190,29 @@ export const orgAPI = {
   cxoDirectory: (params) => api.get('/org/cxo-directory', { params }),
   cxoSearch: (params) => api.get('/org/cxo-directory', { params }),
   approversMaster: (params) => api.get('/org/approvers-master', { params }),
+};
+
+export const timelineAPI = {
+  forEntity: (entityType, entityId, params) => api.get(`/timeline/${entityType}/${encodeURIComponent(entityId)}`, { params }),
+  stepTat: (params) => api.get('/timeline/tat/step-pairs', { params }),
+  rawEvents: (params) => api.get('/timeline/events/raw', { params }),
+};
+
+export const requisitionHoldsAPI = {
+  place: (requisitionId, data) => api.post(`/requisition-holds/${requisitionId}`, data),
+  release: (requisitionId) => api.post(`/requisition-holds/${requisitionId}/release`),
+  history: (requisitionId) => api.get(`/requisition-holds/${requisitionId}/history`),
+};
+
+export const candidatePortalAPI = {
+  invite: (applicationId) => api.post(`/candidate-portal/${applicationId}/invite`),
+  me: () => api.get('/candidate-portal/me'),
+  uploadDocument: (docId, formData) => api.post(`/candidate-portal/documents/${docId}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  reviewQueue: () => api.get('/candidate-portal/review-queue'),
+  reviewDocument: (docId, data) => api.post(`/candidate-portal/documents/${docId}/review`, data),
+  requestDocument: (applicationId, data) => api.post(`/candidate-portal/${applicationId}/documents/request`, data),
+  requestCtc: (applicationId, data) => api.post(`/candidate-portal/${applicationId}/ctc-request`, data),
+  respondCtc: (requestId, data) => api.post(`/candidate-portal/ctc-request/${requestId}/respond`, data),
 };
 
 export const demoAPI = {

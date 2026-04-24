@@ -28,7 +28,7 @@ router.get('/:appId/clearance', async (req, res) => {
 router.post('/:appId/clearance', requireRole('hr_admin', 'hr_recruiter'), async (req, res) => {
   try {
     const { appId } = req.params;
-    const { ctc_data, aop_inline, aop_exceeded_amount } = req.body;
+    const { ctc_data, ctc_text, aop_inline, aop_exceeded_amount } = req.body;
 
     // Check if application exists and has documents uploaded
     const appResult = await pool.query(
@@ -62,20 +62,20 @@ router.post('/:appId/clearance', requireRole('hr_admin', 'hr_recruiter'), async 
       clearanceId = existing.rows[0].id;
       await pool.query(
         `UPDATE candidate_clearance SET
-          ctc_data = $1, aop_inline = $2, aop_exceeded_amount = $3,
+          ctc_data = $1, ctc_text = $6, aop_inline = $2, aop_exceeded_amount = $3,
           primary_cleared = true, primary_cleared_by = $4, primary_cleared_at = NOW(),
           status = 'secondary_review', updated_at = NOW()
         WHERE id = $5`,
-        [JSON.stringify(ctc_data || {}), aop_inline !== false, aop_exceeded_amount || 0, req.user.email, clearanceId]
+        [JSON.stringify(ctc_data || {}), aop_inline !== false, aop_exceeded_amount || 0, req.user.email, clearanceId, ctc_text || null]
       );
     } else {
       const insertResult = await pool.query(
         `INSERT INTO candidate_clearance
-          (application_id, ctc_data, aop_inline, aop_exceeded_amount,
+          (application_id, ctc_data, ctc_text, aop_inline, aop_exceeded_amount,
            primary_cleared, primary_cleared_by, primary_cleared_at, status)
-        VALUES ($1, $2, $3, $4, true, $5, NOW(), 'secondary_review')
+        VALUES ($1, $2, $3, $4, $5, true, $6, NOW(), 'secondary_review')
         RETURNING id`,
-        [appId, JSON.stringify(ctc_data || {}), aop_inline !== false, aop_exceeded_amount || 0, req.user.email]
+        [appId, JSON.stringify(ctc_data || {}), ctc_text || null, aop_inline !== false, aop_exceeded_amount || 0, req.user.email]
       );
       clearanceId = insertResult.rows[0].id;
     }
@@ -107,7 +107,7 @@ router.post('/:appId/clearance', requireRole('hr_admin', 'hr_recruiter'), async 
 router.put('/:appId/clearance', requireRole('hr_admin', 'hr_recruiter'), async (req, res) => {
   try {
     const { appId } = req.params;
-    const { action, comments, cxo_email, ctc_data } = req.body;
+    const { action, comments, cxo_email, ctc_data, ctc_text } = req.body;
 
     const clearanceResult = await pool.query(
       'SELECT * FROM candidate_clearance WHERE application_id = $1 ORDER BY created_at DESC LIMIT 1',
@@ -247,10 +247,10 @@ router.put('/:appId/clearance', requireRole('hr_admin', 'hr_recruiter'), async (
         // Allow recruiter to update CTC after renegotiation
         await pool.query(
           `UPDATE candidate_clearance SET
-            ctc_data = $1, primary_cleared = false, secondary_cleared = false,
+            ctc_data = $1, ctc_text = $3, primary_cleared = false, secondary_cleared = false,
             status = 'pending', hr_action = 'pending', updated_at = NOW()
           WHERE id = $2`,
-          [JSON.stringify(ctc_data || {}), clearance.id]
+          [JSON.stringify(ctc_data || {}), clearance.id, ctc_text || null]
         );
         break;
       }

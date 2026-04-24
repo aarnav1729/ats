@@ -292,91 +292,87 @@ export default function AnalyticsCopilot() {
   };
 
   return (
-    <div className="workspace-shell">
-      {/* Compact header */}
-      <section className="aurora-panel">
-        <div className="aurora-content">
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-200">
-              Analytics Copilot
-            </p>
-            <InfoTip text="Ask plain-language questions grounded in live ATS data: funnel shape, recruiter load, source quality, offer conversion, and join risk." />
-            <span className={`glass-chip border-white/15 ${aiStatus?.available ? 'bg-emerald-400/12 text-emerald-100' : 'bg-amber-400/12 text-amber-100'}`}>
-              {aiStatus?.available
-                ? `Local model live · ${aiStatus.model || 'Ollama'}`
-                : `Fallback mode · ${aiStatus?.model || 'Ollama unavailable'}`}
-            </span>
-          </div>
-          <h1 className="mt-2 font-['Fraunces'] text-[2.4rem] leading-[1] tracking-[-0.04em] text-white">
-            ATS Intelligence
-          </h1>
-          <p className="mt-3 max-w-3xl text-sm leading-7 text-white/74">
-            Ask for trends, anomalies, recruiter performance, candidate movement, sourcing mix, workload concentration, or stage leakage. This workspace is designed for operational review, not generic chatbot chatter.
-          </p>
-          {!aiStatus?.available && (
-            <div className="mt-4 rounded-[24px] border border-amber-300/25 bg-amber-400/10 px-4 py-3 text-sm text-amber-50">
-              Ollama is currently unreachable from the server, so Copilot is answering from the grounded ATS fallback path. Runtime status is exposed from the server AI service through MIS and Copilot.
+    <div className="page-shell space-y-6">
+      <section className="workspace-hero !rounded-[28px] !p-6">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="max-w-3xl">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <p className="workspace-eyebrow">Analytics Copilot</p>
+              <InfoTip text="Ask plain-language questions grounded in live ATS data: funnel shape, recruiter load, source quality, offer conversion, and join risk." />
+              <span className={`badge ${aiStatus?.available ? 'badge-green' : 'badge-yellow'}`}>
+                {aiStatus?.available
+                  ? `Model available · ${aiStatus.model || 'Ollama'}`
+                  : `Fallback mode · ${aiStatus?.model || 'Ollama unavailable'}`}
+              </span>
             </div>
-          )}
+            <h1 className="page-title mt-2">Ask the ATS</h1>
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
+              Get grounded answers across requisitions, jobs, applicants, recruiters, sources, offers, joins, and funnel movement without leaving the hiring workspace.
+            </p>
+            {!aiStatus?.available && (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                The local model is currently unavailable, so Copilot is answering from the grounded fallback path using the ATS reporting dataset.
+              </div>
+            )}
+          </div>
 
-          {/* Horizontal stat cards */}
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:w-[440px]">
             {stats.map((s) => (
               <div
                 key={s.label}
-                className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 backdrop-blur-sm"
+                className="rounded-xl border border-line bg-white px-4 py-3 shadow-xs"
               >
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200/80">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   {s.label}
                 </p>
-                <p className="mt-0.5 text-xl font-semibold tracking-[-0.03em] text-white">
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">
                   {s.value}
                 </p>
               </div>
             ))}
           </div>
+        </div>
 
-          <div className="mt-4 grid gap-3 xl:grid-cols-3">
-            {[
-              {
-                title: 'Spot bottlenecks',
-                prompts: [
-                  'Where is the funnel slowing down most right now?',
-                  'Which department has the slowest time to fill?',
-                ],
-              },
-              {
-                title: 'Coach recruiters',
-                prompts: [
-                  'Which recruiter is overloaded relative to closures?',
-                  'Who should HR admin support this week and why?',
-                ],
-              },
-              {
-                title: 'Improve sourcing',
-                prompts: [
-                  'Which source is producing offers but not joins?',
-                  'Which source is strongest for manufacturing roles?',
-                ],
-              },
-            ].map((section) => (
-              <div key={section.title} className="signal-card">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-100/80">{section.title}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {section.prompts.map((prompt) => (
-                    <button
-                      key={prompt}
-                      type="button"
-                      onClick={() => askQuestion(prompt)}
-                      className="rounded-full border border-white/15 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white/88 transition-colors hover:bg-white/14"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
+        <div className="mt-5 grid gap-3 xl:grid-cols-3">
+          {[
+            {
+              title: 'Funnel bottlenecks',
+              prompts: [
+                'Where is the funnel slowing down most right now?',
+                'Which department has the slowest time to fill?',
+              ],
+            },
+            {
+              title: 'Recruiter workload',
+              prompts: [
+                'Which recruiter is overloaded relative to closures?',
+                'Who should HR admin support this week and why?',
+              ],
+            },
+            {
+              title: 'Source performance',
+              prompts: [
+                'Which source is producing offers but not joins?',
+                'Which source is strongest for manufacturing roles?',
+              ],
+            },
+          ].map((section) => (
+            <div key={section.title} className="rounded-xl border border-line bg-white p-4 shadow-xs">
+              <p className="text-sm font-semibold text-slate-950">{section.title}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {section.prompts.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => askQuestion(prompt)}
+                    className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700"
+                  >
+                    {prompt}
+                  </button>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -484,7 +480,7 @@ export default function AnalyticsCopilot() {
                   {visibleFunnel.map((row) => (
                     <div key={row.stage}>
                       <div className="flex items-center justify-between text-xs text-gray-600">
-                        <span className="truncate">{row.stage}</span>
+                        <span className="break-words">{row.stage}</span>
                         <span className="font-semibold text-gray-800">{row.count}</span>
                       </div>
                       <div className="mt-1 h-1.5 rounded-full bg-gray-100">
@@ -507,7 +503,7 @@ export default function AnalyticsCopilot() {
                 <div className="space-y-1.5">
                   {topRecruiters.map((row) => (
                     <div key={row.recruiter} className="flex items-center justify-between text-xs">
-                      <span className="truncate text-gray-600">{row.recruiter}</span>
+                      <span className="break-words text-gray-600">{row.recruiter}</span>
                       <span className="shrink-0 font-semibold text-gray-800">
                         {row.closures} joins
                       </span>
@@ -525,7 +521,7 @@ export default function AnalyticsCopilot() {
                 <div className="space-y-1.5">
                   {topSources.map((row) => (
                     <div key={row.source} className="flex items-center justify-between text-xs">
-                      <span className="truncate text-gray-600">{row.source}</span>
+                      <span className="break-words text-gray-600">{row.source}</span>
                       <span className="shrink-0 font-semibold text-gray-800">
                         {row.joins} joins
                       </span>
@@ -543,7 +539,7 @@ export default function AnalyticsCopilot() {
                 <div className="space-y-1.5">
                   {departmentHealth.map((row) => (
                     <div key={row.department} className="flex items-center justify-between text-xs">
-                      <span className="truncate text-gray-600">{row.department}</span>
+                      <span className="break-words text-gray-600">{row.department}</span>
                       <span className="shrink-0 font-semibold text-gray-800">
                         {row.open_count} open
                       </span>

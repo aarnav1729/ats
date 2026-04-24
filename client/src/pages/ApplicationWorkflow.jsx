@@ -1,36 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { applicationsAPI, candidatesAPI, interviewsAPI, jobsAPI, mastersAPI, orgAPI } from '../services/api';
+import { applicationsAPI, candidatesAPI, interviewsAPI, jobsAPI, mastersAPI, orgAPI, candidatePortalAPI } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import EmailAutocompleteTags from '../components/EmailAutocompleteTags';
 import InfoTip from '../components/InfoTip';
-
-const CTC_FIELDS = [
-  { key: 'name', label: 'Name' },
-  { key: 'company', label: 'Company' },
-  { key: 'department', label: 'Department' },
-  { key: 'selected_by', label: 'Selected By' },
-  { key: 'position_approved_by', label: 'Position Approved By' },
-  { key: 'qualification', label: 'Qualification' },
-  { key: 'total_experience', label: 'Total Experience' },
-  { key: 'current_ctc', label: 'Current CTC' },
-  { key: 'current_nth', label: 'Current NTH' },
-  { key: 'offered_nth', label: 'Offered NTH' },
-  { key: 'negotiated_ctc', label: 'Negotiated CTC' },
-  { key: 'current_max_slab', label: 'Current Max Slab' },
-  { key: 'hike_on_current_max', label: 'Hike on Current Max' },
-  { key: 'hike_percent_on_ctc', label: '% Hike on Current CTC' },
-  { key: 'current_designation', label: 'Current Designation' },
-  { key: 'offered_designation', label: 'Offered Designation' },
-  { key: 'on_roll_off_roll', label: 'On Roll / Off Roll' },
-  { key: 'position_status', label: 'Position Status' },
-  { key: 'remarks', label: 'Remarks' },
-  { key: 'hod_approval', label: 'HOD Approval' },
-  { key: 'edoj', label: 'EDOJ' },
-  { key: 'profile_closed_by', label: 'Profile Closed By' },
-  { key: 'grade', label: 'Grade' },
-];
+import CTCPasteTable from '../components/CTCPasteTable';
+import Timeline from '../components/Timeline';
+import haptic from '../utils/haptic';
 
 const CLEARANCE_STATUS_LABELS = {
   pending: 'Pending Primary Review',
@@ -58,7 +35,6 @@ import {
   getSecondaryWorkflowActions,
   getStatusMeta,
   getWorkflowProgress,
-  getWorkflowTutorial,
 } from '../workflow/applicationWorkflow';
 
 const STATUS_BADGES = {
@@ -150,76 +126,98 @@ function buildRoundPlanFromApplication(application) {
   };
 }
 
-function WorkflowHero({ application, nextOwner }) {
+function WorkflowHero({ application, nextOwner, primaryAction }) {
   const meta = getStatusMeta(application?.status);
-  const tutorial = getWorkflowTutorial(application?.status);
   return (
-    <div className="workspace-hero">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+    <div className="workspace-hero animate-fade-in-up">
+      <div className="grid gap-6 xl:grid-cols-[1.12fr,0.88fr] xl:items-start">
         <div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="utility-strip">
             <span className={`inline-flex rounded-full px-3 py-1 text-sm font-semibold ${STATUS_BADGES[application?.status] || 'bg-gray-100 text-gray-700'}`}>
               {application?.status || 'Unknown'}
             </span>
-            <span className="text-sm font-medium text-gray-500">
-              Current owner: <span className="text-gray-800">{nextOwner || meta.owner}</span>
-            </span>
+            <span className="utility-chip">Owner · {nextOwner || meta.owner}</span>
+            {primaryAction?.label ? <span className="action-required-badge">Action ready</span> : null}
           </div>
-          <h1 className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-gray-950">
-            {application?.candidate_name || 'Candidate Workflow'}
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="page-title mt-4">{application?.candidate_name || 'Candidate Workflow'}</h1>
+          <p className="page-subtitle mt-3 max-w-3xl">
             {meta.summary}
           </p>
+          <div className="mt-6 fact-grid">
+            {[
+              ['Application', application?.application_id || application?.id],
+              ['Role', application?.job_title || application?.ats_job_id || 'Role not linked'],
+              ['Source', application?.source || 'Not captured'],
+              ['Interview Plan', `${application?.no_of_rounds || 0} round(s)`],
+            ].map(([label, value]) => (
+              <div key={label} className="fact-card">
+                <p className="workspace-kicker">{label}</p>
+                <p className="mt-2 text-sm font-semibold text-slate-900">{value}</p>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 shadow-sm">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-gray-500">Application</p>
-          <p className="mt-1 text-sm font-semibold text-gray-900">{application?.application_id || application?.id}</p>
-          <p className="mt-2 text-sm text-gray-500">{application?.candidate_email}</p>
-          <p className="text-sm text-gray-500">{application?.candidate_phone || 'Phone not captured'}</p>
+
+        <div className="focus-panel">
+          <p className="workspace-kicker">Current routing</p>
+          <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">{nextOwner || meta.owner}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Keep the record moving from one accountable desk to the next without modal-hopping or hidden row actions.
+              </p>
+            </div>
+            <div className="rounded-[22px] border border-[rgba(29,33,41,0.08)] bg-white/80 px-4 py-3 shadow-sm">
+              <p className="workspace-kicker">Recommended</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{primaryAction?.label || 'Monitor current owner activity'}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 fact-grid">
+            <div className="fact-card">
+              <p className="workspace-kicker">Candidate Contact</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{application?.candidate_email || 'Email not captured'}</p>
+              <p className="mt-1 text-sm text-slate-500">{application?.candidate_phone || 'Phone not captured'}</p>
+            </div>
+            <div className="fact-card">
+              <p className="workspace-kicker">Recruiter Owner</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{application?.recruiter_email || 'Unassigned'}</p>
+              <p className="mt-1 text-sm text-slate-500">{application?.created_by || 'Creator not captured'}</p>
+            </div>
+          </div>
         </div>
       </div>
-      <div className="mt-6 grid gap-3 md:grid-cols-4">
-        <div className="workspace-stat">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">Next Owner</p>
-          <p className="mt-2 text-sm font-semibold text-gray-900">{nextOwner || meta.owner}</p>
-        </div>
-        <div className="workspace-stat">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">Source</p>
-          <p className="mt-2 text-sm font-semibold text-gray-900">{application?.source || 'Not captured'}</p>
-        </div>
-        <div className="workspace-stat">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">Recruiter</p>
-          <p className="mt-2 text-sm font-semibold text-gray-900">{application?.recruiter_email || 'Unassigned'}</p>
-        </div>
-        <div className="workspace-stat">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">Interview Plan</p>
-          <p className="mt-2 text-sm font-semibold text-gray-900">{application?.no_of_rounds || 0} round(s)</p>
-        </div>
-      </div>
-      {/* Tutorial steps removed — guidance is embedded inline via InfoTip icons */}
     </div>
   );
 }
 
 function StageRail({ status }) {
+  const progress = getWorkflowProgress(status);
   return (
-    <div className="workspace-card">
-      <div className="flex flex-col gap-3 lg:flex-row">
-        {getWorkflowProgress(status).map((lane) => (
+    <div className="workspace-card animate-fade-in-up stagger-1">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="workspace-kicker">Process Map</p>
+          <h2 className="section-title mt-2">Hiring progression at a glance</h2>
+        </div>
+        <span className="utility-chip">Live status · {status || 'Unknown'}</span>
+      </div>
+      <div className="workflow-stage-rail mt-5">
+        {progress.map((lane) => (
           <div
             key={lane.key}
-            className={`flex-1 rounded-2xl border px-4 py-4 ${
+            className={`workflow-stage-card ${
               lane.state === 'active'
-                ? 'border-indigo-300 bg-indigo-50'
+                ? 'is-active'
                 : lane.state === 'done'
-                  ? 'border-emerald-200 bg-emerald-50'
-                  : 'border-gray-200 bg-gray-50'
+                  ? 'is-done'
+                  : ''
             }`}
           >
-            <p className="text-sm font-semibold text-gray-900">{lane.label}</p>
-            <p className="mt-1 text-sm text-gray-600">{lane.description}</p>
-            <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+            <p className="workspace-kicker">{lane.state === 'active' ? 'Active lane' : lane.state === 'done' ? 'Completed' : 'Up next'}</p>
+            <p className="mt-2 text-sm font-semibold text-gray-900">{lane.label}</p>
+            <p className="mt-1 text-sm leading-6 text-gray-600">{lane.description}</p>
+            <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
               {lane.state === 'active' ? lane.currentStatus : lane.state}
             </p>
           </div>
@@ -232,7 +230,7 @@ function StageRail({ status }) {
 export default function ApplicationWorkflow() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, hasRole } = useAuth();
+  const { hasRole } = useAuth();
   const [application, setApplication] = useState(null);
   const [loading, setLoading] = useState(true);
   const [rejectionReasons, setRejectionReasons] = useState([]);
@@ -253,7 +251,7 @@ export default function ApplicationWorkflow() {
   const [documentReviewNotes, setDocumentReviewNotes] = useState({});
   const [clearance, setClearance] = useState(null);
   const [clearanceLoading, setClearanceLoading] = useState(false);
-  const [ctcForm, setCtcForm] = useState(() => Object.fromEntries(CTC_FIELDS.map((f) => [f.key, ''])));
+  const [ctcTable, setCtcTable] = useState({ rows: [] });
   const [aopInline, setAopInline] = useState(true);
   const [aopExceededAmount, setAopExceededAmount] = useState('');
   const [clearanceComments, setClearanceComments] = useState('');
@@ -301,7 +299,14 @@ export default function ApplicationWorkflow() {
       setClearance(c);
       if (c?.ctc_data) {
         const parsed = typeof c.ctc_data === 'string' ? JSON.parse(c.ctc_data) : c.ctc_data;
-        setCtcForm((prev) => ({ ...prev, ...parsed }));
+        // Accept both new shape { rows: [[]] } and legacy flat object
+        if (parsed && Array.isArray(parsed.rows)) {
+          setCtcTable(parsed);
+        } else if (parsed && typeof parsed === 'object') {
+          // Migrate legacy flat object -> two-column rows (label / value)
+          const rows = Object.entries(parsed).map(([k, v]) => [k, String(v ?? '')]);
+          setCtcTable({ rows: rows.length ? [['Field', 'Value'], ...rows] : [] });
+        }
       }
       if (c) {
         setAopInline(c.aop_inline !== false);
@@ -331,19 +336,13 @@ export default function ApplicationWorkflow() {
         const items = Array.isArray(reasonsRes.data) ? reasonsRes.data : reasonsRes.data?.items || reasonsRes.data?.data || [];
         setRejectionReasons(items.filter((item) => item.active_flag !== false));
         setOpenJobs((jobsRes.data?.jobs || []).filter((job) => String(job.job_id) !== String(appRes.data?.ats_job_id)));
-        // Pre-fill candidate info into CTC form
-        setCtcForm((prev) => ({
-          ...prev,
-          name: prev.name || appRes.data?.candidate_name || '',
-          current_ctc: prev.current_ctc || (appRes.data?.current_ctc != null ? String(appRes.data.current_ctc) : ''),
-          total_experience: prev.total_experience || (appRes.data?.candidate_years_of_experience != null ? String(appRes.data.candidate_years_of_experience) : ''),
-          current_designation: prev.current_designation || appRes.data?.current_designation || '',
-        }));
         setSecondaryRecruiterEmail(appRes.data?.secondary_recruiter_email || '');
         loadClearance(id);
-      } catch {
-        toast.error('Failed to load candidate workflow');
-        navigate('/jobs');
+      } catch (err) {
+        const detail = err?.response?.data?.error || err?.message || 'Unknown error';
+        console.error('Candidate workflow load error:', err);
+        toast.error(`Failed to load candidate workflow: ${detail}`);
+        // Don't force-navigate — let the user see the error and try again.
       } finally {
         setLoading(false);
       }
@@ -360,9 +359,11 @@ export default function ApplicationWorkflow() {
         stage: nextStatus,
         ...extra,
       });
+      haptic.success();
       toast.success(`Candidate moved to ${nextStatus}`);
       await refresh();
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to update candidate stage');
     } finally {
       setActionLoading('');
@@ -376,6 +377,7 @@ export default function ApplicationWorkflow() {
       .map((items) => items.map((item) => item.email).filter(Boolean));
 
     if (!interviewers[0]?.length) {
+      haptic.warning();
       toast.error('Assign at least one reviewer for round 1');
       return;
     }
@@ -393,6 +395,7 @@ export default function ApplicationWorkflow() {
       .slice(0, roundCount)
       .map((items) => items.map((item) => item.email).filter(Boolean));
     if (!interviewers[0]?.length) {
+      haptic.warning();
       toast.error('Assign at least one reviewer for round 1');
       return;
     }
@@ -403,9 +406,11 @@ export default function ApplicationWorkflow() {
         no_of_rounds: roundCount,
         interviewers,
       });
+      haptic.success();
       toast.success('Interview plan updated');
       await refresh();
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to update the interview plan');
     } finally {
       setActionLoading('');
@@ -414,6 +419,7 @@ export default function ApplicationWorkflow() {
 
   const handleRequestDocument = async () => {
     if (!application?.id || !documentRequest.document_name.trim()) {
+      haptic.warning();
       toast.error('Document name is required');
       return;
     }
@@ -425,11 +431,51 @@ export default function ApplicationWorkflow() {
         document_name: documentRequest.document_name.trim(),
         description: documentRequest.description.trim(),
       });
+      haptic.success();
       toast.success('Document request sent to candidate');
       setDocumentRequest((prev) => ({ ...prev, document_name: '', description: '' }));
       await refresh();
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to request document');
+    } finally {
+      setActionLoading('');
+    }
+  };
+
+  const handleInviteToPortal = async () => {
+    if (!application?.id) return;
+    try {
+      setActionLoading('invite-portal');
+      await candidatePortalAPI.invite(application.id);
+      haptic.success();
+      toast.success('Portal invite emailed to candidate');
+      await refresh();
+    } catch (err) {
+      haptic.error();
+      toast.error(err.response?.data?.error || 'Failed to invite candidate');
+    } finally {
+      setActionLoading('');
+    }
+  };
+
+  const handleRequestCtc = async () => {
+    if (!application?.id) return;
+    const ctcText = ctcTable?.text || '';
+    if (!ctcText.trim()) {
+      toast.error('Populate the CTC table before requesting acceptance');
+      return;
+    }
+    const message = window.prompt('Optional message to candidate (context for the CTC):', '') || '';
+    try {
+      setActionLoading('request-ctc');
+      await candidatePortalAPI.requestCtc(application.id, { ctc_text: ctcText, message });
+      haptic.success();
+      toast.success('CTC acceptance request sent to candidate');
+      await refresh();
+    } catch (err) {
+      haptic.error();
+      toast.error(err.response?.data?.error || 'Failed to request CTC acceptance');
     } finally {
       setActionLoading('');
     }
@@ -440,6 +486,7 @@ export default function ApplicationWorkflow() {
       ? String(documentReviewNotes[document.id] || '').trim()
       : '';
     if (status === 'rejected' && !rejectionReason) {
+      haptic.warning();
       toast.error(`Add a rejection note for ${document.document_name}`);
       return;
     }
@@ -451,9 +498,11 @@ export default function ApplicationWorkflow() {
         rejection_reason: status === 'rejected' ? rejectionReason : undefined,
       });
       setDocumentReviewNotes((prev) => ({ ...prev, [document.id]: '' }));
+      haptic.success();
       toast.success(`Document ${status}`);
       await refresh();
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to review document');
     } finally {
       setActionLoading('');
@@ -464,9 +513,11 @@ export default function ApplicationWorkflow() {
     try {
       setActionLoading(`remind-document-${document.id}`);
       await candidatesAPI.remind(application.id, document.id);
+      haptic.notify();
       toast.success('Reminder sent');
       await refresh();
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to send reminder');
     } finally {
       setActionLoading('');
@@ -477,9 +528,11 @@ export default function ApplicationWorkflow() {
     try {
       setActionLoading('keep-pool');
       await applicationsAPI.keepInTalentPool(application.id);
+      haptic.success();
       toast.success('Candidate moved back into the reusable talent pool');
       await refresh();
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to keep candidate in talent pool');
     } finally {
       setActionLoading('');
@@ -491,9 +544,11 @@ export default function ApplicationWorkflow() {
     try {
       setActionLoading('delete-profile');
       await applicationsAPI.delete(application.id);
+      haptic.success();
       toast.success('Candidate removed from active workflows');
       navigate('/talent-pool');
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to remove candidate');
     } finally {
       setActionLoading('');
@@ -502,6 +557,7 @@ export default function ApplicationWorkflow() {
 
   const handleBanProfile = async () => {
     if (!disposition.ban_reason.trim()) {
+      haptic.warning();
       toast.error('Ban reason is required');
       return;
     }
@@ -513,9 +569,11 @@ export default function ApplicationWorkflow() {
         role_name: disposition.ban_scope === 'role' ? disposition.ban_role : undefined,
         reason: disposition.ban_reason.trim(),
       });
+      haptic.success();
       toast.success('Candidate ban saved');
       await refresh();
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to ban candidate');
     } finally {
       setActionLoading('');
@@ -526,14 +584,17 @@ export default function ApplicationWorkflow() {
     try {
       setClearanceLoading(true);
       await candidatesAPI.submitClearance(application.id, {
-        ctc_data: ctcForm,
+        ctc_data: ctcTable,
+        ctc_text: ctcTable?.text || '',
         aop_inline: aopInline,
         aop_exceeded_amount: aopInline ? 0 : Number(aopExceededAmount) || 0,
       });
+      haptic.success();
       toast.success('Clearance submitted for secondary review');
       await refresh();
     } catch (err) {
       const msg = err.response?.data?.error || 'Failed to submit clearance';
+      haptic.error();
       if (err.response?.data?.needs_secondary_recruiter) {
         toast.error('Assign a secondary recruiter first');
       } else {
@@ -556,14 +617,17 @@ export default function ApplicationWorkflow() {
         action,
         comments: finalComments,
         cxo_email: cxoEmail,
-        ctc_data: ctcForm,
+        ctc_data: ctcTable,
+        ctc_text: ctcTable?.text || '',
         ...extra,
       });
+      haptic.success();
       toast.success(`Clearance action '${action.replace(/_/g, ' ')}' completed`);
       setClearanceComments('');
       if (action === 'hr_send_to_cxo') setCtcEmailBody('');
       await refresh();
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to perform clearance action');
     } finally {
       setClearanceLoading(false);
@@ -572,15 +636,18 @@ export default function ApplicationWorkflow() {
 
   const handleAssignSecondaryRecruiter = async () => {
     if (!secondaryRecruiterEmail.trim()) {
+      haptic.warning();
       toast.error('Enter the secondary recruiter email');
       return;
     }
     try {
       setClearanceLoading(true);
       await applicationsAPI.update(application.id, { secondary_recruiter_email: secondaryRecruiterEmail.trim() });
+      haptic.success();
       toast.success('Secondary recruiter assigned');
       await refresh();
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to assign secondary recruiter');
     } finally {
       setClearanceLoading(false);
@@ -589,6 +656,7 @@ export default function ApplicationWorkflow() {
 
   const handleMoveToJob = async () => {
     if (!disposition.target_job_id) {
+      haptic.warning();
       toast.error('Select the destination job');
       return;
     }
@@ -596,9 +664,11 @@ export default function ApplicationWorkflow() {
     try {
       setActionLoading('move-job');
       await applicationsAPI.moveJob(application.id, { target_job_id: disposition.target_job_id });
+      haptic.success();
       toast.success('Candidate moved to the selected job');
       await refresh();
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to move candidate to another job');
     } finally {
       setActionLoading('');
@@ -613,8 +683,10 @@ export default function ApplicationWorkflow() {
         recipient_type: recipientType,
         note: `Reminder sent from the candidate workflow for ${application.candidate_name}.`,
       });
+      haptic.notify();
       toast.success('Reminder sent');
     } catch (err) {
+      haptic.error();
       toast.error(err.response?.data?.error || 'Failed to send reminder');
     } finally {
       setActionLoading('');
@@ -622,6 +694,7 @@ export default function ApplicationWorkflow() {
   };
 
   const openInterviewWorkspace = () => {
+    haptic.light();
     if (!activeInterviewTask?.id) {
       navigate('/interviews');
       return;
@@ -630,6 +703,7 @@ export default function ApplicationWorkflow() {
   };
 
   const openSchedulingWorkspace = () => {
+    haptic.light();
     navigate(`/applications/${application.id}/schedule`);
   };
 
@@ -648,7 +722,7 @@ export default function ApplicationWorkflow() {
   return (
     <div className="workspace-shell">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <button onClick={() => navigate(-1)} className="btn-secondary">
+        <button onClick={() => { haptic.light(); navigate(-1); }} className="btn-secondary">
           Back
         </button>
         <div className="flex flex-wrap gap-2">
@@ -665,15 +739,16 @@ export default function ApplicationWorkflow() {
         </div>
       </div>
 
-      <WorkflowHero application={application} nextOwner={nextOwner} />
+      <WorkflowHero application={application} nextOwner={nextOwner} primaryAction={primaryAction} />
       <StageRail status={application.status} />
 
-      <div className="workspace-grid">
-        <div className="workspace-main">
-          <section className="workspace-card">
+      <div className="workboard-layout">
+        <aside className="workboard-lane workboard-lane-primary">
+          <section className="workspace-card panel-hover">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="section-title">Candidate Dossier</h2>
+                <p className="mt-1 text-sm text-gray-500">Context, candidate facts, and the primary review packet in one left rail.</p>
               </div>
               {application.resume_path && (
                 <a href={application.resume_path} target="_blank" rel="noreferrer" className="btn-secondary">
@@ -682,7 +757,7 @@ export default function ApplicationWorkflow() {
               )}
             </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-5 fact-grid">
               {[
                 ['Email', application.candidate_email],
                 ['Phone', application.candidate_phone],
@@ -697,7 +772,7 @@ export default function ApplicationWorkflow() {
                 ['Application Status', application.status],
                 ['No. of Rounds', application.no_of_rounds || '-'],
               ].map(([label, value]) => (
-                <div key={label} className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
+                <div key={label} className="fact-card">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">{label}</p>
                   <p className="mt-2 text-sm font-medium text-gray-900">{value || '-'}</p>
                 </div>
@@ -710,23 +785,54 @@ export default function ApplicationWorkflow() {
                 <InfoTip text="Recruiters, HODs, and interviewers should always review the candidate dossier here before scheduling or rejecting." />
               </div>
               {application.resume_path ? (
-                renderInlinePreview(application.resume_path, application.resume_file_name || application.candidate_name || 'Resume') || (
-                  <div className="rounded-2xl border border-dashed border-gray-300 px-4 py-10 text-sm text-gray-500">
-                    Inline preview works for PDFs and image resumes. Open the resume in a new tab for other file types.
-                  </div>
-                )
+                <div className="preview-surface">
+                  {renderInlinePreview(application.resume_path, application.resume_file_name || application.candidate_name || 'Resume') || (
+                    <div className="rounded-2xl border border-dashed border-gray-300 px-4 py-10 text-sm text-gray-500">
+                      Inline preview works for PDFs and image resumes. Open the resume in a new tab for other file types.
+                    </div>
+                  )}
+                </div>
               ) : (
-                <div className="rounded-2xl border border-dashed border-gray-300 px-4 py-10 text-sm text-gray-500">
-                  No resume is attached yet.
+                <div className="preview-surface">
+                  <div className="rounded-2xl border border-dashed border-gray-300 px-4 py-10 text-sm text-gray-500">
+                    No resume is attached yet.
+                  </div>
                 </div>
               )}
             </div>
           </section>
 
-          <section className="workspace-card">
+          <section className="workspace-card panel-hover">
+            <div className="flex items-center gap-2">
+              <h2 className="section-title">Routing Snapshot</h2>
+              <InfoTip text="Use this summary rail to understand who owns the current motion and what action desk should open next." />
+            </div>
+            <div className="mt-4 decision-stack">
+              <div className="decision-card decision-card-strong">
+                <p className="workspace-kicker">Recommended next action</p>
+                <p className="mt-2 text-base font-semibold text-slate-950">{primaryAction?.label || 'Monitor current owner activity'}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{getStatusMeta(application.status).summary}</p>
+              </div>
+              <div className="fact-grid">
+                <div className="fact-card">
+                  <p className="workspace-kicker">Current owner</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{nextOwner || getStatusMeta(application.status).owner}</p>
+                </div>
+                <div className="fact-card">
+                  <p className="workspace-kicker">Secondary recruiter</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{application.secondary_recruiter_email || 'Not assigned'}</p>
+                </div>
+              </div>
+            </div>
+          </section>
+        </aside>
+
+        <div className="workboard-lane">
+          <section className="workspace-card panel-hover">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="section-title">Interview Trail</h2>
+                <p className="mt-1 text-sm text-gray-500">Panel progression, calendar sync, round outcomes, and reviewer notes stay centralized here.</p>
               </div>
               {activeInterviewTask?.meeting_join_url && (
                 <a href={activeInterviewTask.meeting_join_url} target="_blank" rel="noreferrer" className="btn-secondary">
@@ -742,7 +848,7 @@ export default function ApplicationWorkflow() {
             ) : (
               <div className="mt-5 space-y-3">
                 {application.interview_feedback.map((task) => (
-                  <div key={task.id} className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4">
+                  <div key={task.id} className="decision-card">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-gray-900">Round {task.round_number}</p>
@@ -778,13 +884,37 @@ export default function ApplicationWorkflow() {
             )}
           </section>
 
-          <section className="workspace-card">
+          <section className="workspace-card panel-hover">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="section-title">Candidate Documents</h2>
+                <p className="mt-1 text-sm text-gray-500">Document requests, uploads, inline review, and reminders are grouped into one operating surface.</p>
               </div>
               <span className="text-sm font-medium text-gray-500">{application.candidate_documents?.length || 0} document(s)</span>
             </div>
+
+            {['Selected', 'OfferInProcess', 'Offered', 'OfferAccepted', 'Joined'].includes(application.status) && (
+              <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-emerald-950">Candidate self-service portal</p>
+                  <p className="text-xs text-emerald-800 mt-1">
+                    {application.portal_user_id
+                      ? `Portal account active${application.portal_first_login_at ? ' · candidate has logged in' : ' · awaiting first login'}`
+                      : 'Invite the candidate to log in and upload their documents themselves.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleInviteToPortal}
+                  disabled={actionLoading === 'invite-portal'}
+                  className="btn-secondary whitespace-nowrap disabled:opacity-50"
+                >
+                  {actionLoading === 'invite-portal'
+                    ? 'Sending…'
+                    : application.portal_user_id ? 'Resend portal invite' : 'Invite to candidate portal'}
+                </button>
+              </div>
+            )}
 
             {['Selected', 'OfferInProcess', 'Offered', 'OfferAccepted', 'Joined'].includes(application.status) && (
               <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
@@ -835,7 +965,7 @@ export default function ApplicationWorkflow() {
             ) : (
               <div className="mt-5 space-y-3">
                 {application.candidate_documents.map((document) => (
-                  <div key={document.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                  <div key={document.id} className="decision-card">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-gray-900">{document.document_name}</p>
@@ -852,7 +982,7 @@ export default function ApplicationWorkflow() {
                     {document.description && <p className="mt-3 text-sm text-gray-700">{document.description}</p>}
                     {document.rejection_reason && <p className="mt-2 text-sm text-red-600">{document.rejection_reason}</p>}
                     {document.file_path && (
-                      <div className="mt-4">
+                      <div className="preview-surface mt-4">
                         {renderInlinePreview(document.file_path, document.file_name || document.document_name) || (
                           <div className="rounded-2xl border border-dashed border-gray-300 px-4 py-6 text-sm text-gray-500">
                             Inline preview works for PDFs and image files. Open the file in a new tab for other formats.
@@ -961,19 +1091,19 @@ export default function ApplicationWorkflow() {
                   <div className={`rounded-xl border px-3 py-2 text-center ${clearance.primary_cleared ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Primary</p>
                     <p className="mt-1 text-sm font-semibold text-gray-900">{clearance.primary_cleared ? 'Cleared' : 'Pending'}</p>
-                    {clearance.primary_cleared_by && <p className="text-xs text-gray-500 truncate">{clearance.primary_cleared_by}</p>}
+                    {clearance.primary_cleared_by && <p className="text-xs text-gray-500 break-all">{clearance.primary_cleared_by}</p>}
                   </div>
                   <div className={`rounded-xl border px-3 py-2 text-center ${clearance.secondary_cleared ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Secondary</p>
                     <p className="mt-1 text-sm font-semibold text-gray-900">{clearance.secondary_cleared ? 'Cleared' : 'Pending'}</p>
-                    {clearance.secondary_cleared_by && <p className="text-xs text-gray-500 truncate">{clearance.secondary_cleared_by}</p>}
+                    {clearance.secondary_cleared_by && <p className="text-xs text-gray-500 break-all">{clearance.secondary_cleared_by}</p>}
                   </div>
                   <div className={`rounded-xl border px-3 py-2 text-center ${clearance.status === 'approved' ? 'border-green-200 bg-green-50' : clearance.status === 'rejected' ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">HR / CXO</p>
                     <p className="mt-1 text-sm font-semibold text-gray-900">
                       {clearance.status === 'approved' ? 'Approved' : clearance.status === 'rejected' ? 'Rejected' : clearance.status === 'cxo_review' ? 'CXO Review' : 'Pending'}
                     </p>
-                    {(clearance.hr_action_by || clearance.cxo_email) && <p className="text-xs text-gray-500 truncate">{clearance.hr_action_by || clearance.cxo_email}</p>}
+                    {(clearance.hr_action_by || clearance.cxo_email) && <p className="text-xs text-gray-500 break-all">{clearance.hr_action_by || clearance.cxo_email}</p>}
                   </div>
                 </div>
               )}
@@ -992,27 +1122,18 @@ export default function ApplicationWorkflow() {
                 </div>
               )}
 
-              {/* CTC Table Form - editable by primary recruiter before clearance or during renegotiation */}
+              {/* CTC Table - editable by primary recruiter before clearance or during renegotiation */}
               {(!clearance || clearance.status === 'pending' || clearance.status === 'renegotiation') && hasRole('hr_admin', 'hr_recruiter') && (
                 <div className="mt-5">
                   <div className="flex items-center gap-2 mb-3">
                     <h3 className="text-sm font-semibold text-gray-900">CTC Comparison Table</h3>
-                    <InfoTip text="Fill the CTC details before submitting for clearance. Fields auto-populate from candidate data where available." />
+                    <InfoTip text="Paste the CTC comparison table directly from your Excel sheet — rows and columns are preserved exactly as pasted." />
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {CTC_FIELDS.map((field) => (
-                      <div key={field.key}>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">{field.label}</label>
-                        <input
-                          type="text"
-                          value={ctcForm[field.key] || ''}
-                          onChange={(e) => setCtcForm((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                          className="input-field text-sm"
-                          placeholder={field.label}
-                        />
-                      </div>
-                    ))}
-                  </div>
+                  <CTCPasteTable
+                    value={ctcTable}
+                    onChange={setCtcTable}
+                    placeholder="Paste the full CTC comparison table from your Excel template — headers, values, all preserved."
+                  />
 
                   <div className="mt-5 rounded-2xl border border-gray-200 bg-gray-50 p-4">
                     <div className="flex items-center gap-4">
@@ -1059,6 +1180,15 @@ export default function ApplicationWorkflow() {
                   >
                     {clearanceLoading ? 'Submitting...' : clearance?.status === 'renegotiation' ? 'Resubmit After Renegotiation' : 'Submit for Secondary Review'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={handleRequestCtc}
+                    disabled={actionLoading === 'request-ctc' || !ctcTable?.text}
+                    className="btn-secondary mt-2 w-full disabled:opacity-50"
+                    title="Send this CTC table to the candidate for acceptance via their portal"
+                  >
+                    {actionLoading === 'request-ctc' ? 'Sending…' : 'Send to candidate for CTC acceptance'}
+                  </button>
                 </div>
               )}
 
@@ -1066,19 +1196,7 @@ export default function ApplicationWorkflow() {
               {clearance && !['pending', 'renegotiation'].includes(clearance.status) && clearance.ctc_data && (
                 <div className="mt-5">
                   <h3 className="text-sm font-semibold text-gray-900 mb-3">CTC Table (Submitted)</h3>
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {CTC_FIELDS.map((field) => {
-                      const parsed = typeof clearance.ctc_data === 'string' ? JSON.parse(clearance.ctc_data) : clearance.ctc_data;
-                      const val = parsed[field.key];
-                      if (!val) return null;
-                      return (
-                        <div key={field.key} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{field.label}</p>
-                          <p className="mt-1 text-sm font-medium text-gray-900">{val}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <CTCPasteTable value={ctcTable} readOnly />
                   {!aopInline && clearance.aop_exceeded_amount > 0 && (
                     <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2">
                       <p className="text-sm font-semibold text-amber-900">AOP Exceeded by INR {clearance.aop_exceeded_amount}</p>
@@ -1209,22 +1327,20 @@ export default function ApplicationWorkflow() {
           )}
         </div>
 
-        <div className="workspace-rail">
+        <aside className="workboard-lane workboard-lane-aside">
           <section className="focus-panel">
             <div className="flex items-center gap-2">
               <h2 className="section-title">Guided Next Step</h2>
               <InfoTip text="Only the next operationally valid step is highlighted here so recruiters do not have to infer the process from row buttons or guesswork." />
             </div>
-            <p className="mt-2 text-sm text-gray-500">
-            </p>
 
-            <div className="mt-5 rounded-[24px] border border-indigo-100 bg-white/70 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-600">Recommended next action</p>
+            <div className="decision-card decision-card-strong mt-5">
+              <p className="workspace-kicker text-indigo-600">Recommended next action</p>
               <p className="mt-2 text-lg font-semibold text-gray-950">{primaryAction?.label || 'Monitor current owner activity'}</p>
               <p className="mt-2 text-sm text-gray-600">{getStatusMeta(application.status).summary}</p>
             </div>
 
-            <div className="mt-5 space-y-4">
+            <div className="decision-stack mt-5">
               {(application.status === 'InQueue' || application.status === 'Applied') && (
                 <>
                   {application.status === 'InQueue' && (
@@ -1247,7 +1363,7 @@ export default function ApplicationWorkflow() {
                       {actionLoading === 'Shortlisted' ? 'Updating...' : 'Shortlist Candidate'}
                     </button>
                   )}
-                  <div className="rounded-2xl border border-gray-200 p-4">
+                  <div className="decision-card">
                     <p className="text-sm font-semibold text-gray-900">Alternate decision: reject with reason</p>
                     <select
                       value={screeningDecision.rejection_reason}
@@ -1272,7 +1388,7 @@ export default function ApplicationWorkflow() {
               )}
 
               {needsInterviewPlanning && (
-                <div className="space-y-4 rounded-2xl border border-gray-200 p-4">
+                <div className="decision-card decision-card-strong space-y-4">
                   <div>
                     <p className="text-sm font-semibold text-gray-900">
                       {requestedRoundExtension
@@ -1293,7 +1409,7 @@ export default function ApplicationWorkflow() {
                         Reviewer request: {requestedRoundExtension.requested_additional_rounds} more round(s)
                       </p>
                       {requestedRoundExtension.additional_round_request_remarks && (
-                        <p className="mt-2 text-sm text-amber-900">{requestedRoundExtension.additional_round_request_remarks}</p>
+                        <p className="mt-2 whitespace-pre-wrap text-sm text-amber-900">{requestedRoundExtension.additional_round_request_remarks}</p>
                       )}
                     </div>
                   )}
@@ -1337,7 +1453,7 @@ export default function ApplicationWorkflow() {
               )}
 
               {application.status === 'AwaitingHODResponse' && activeInterviewTask && (
-                <div className="rounded-2xl border border-gray-200 p-4">
+                <div className="decision-card">
                   <p className="text-sm font-semibold text-gray-900">Waiting for reviewer action</p>
                   <p className="mt-2 text-sm text-gray-600">
                     The assigned HOD or interviewer must inspect the candidate dossier and either suggest two slots or reject before the interview happens.
@@ -1349,7 +1465,7 @@ export default function ApplicationWorkflow() {
               )}
 
               {application.status === 'AwaitingInterviewScheduling' && (
-                <div className="rounded-2xl border border-gray-200 p-4">
+                <div className="decision-card decision-card-warn">
                   <p className="text-sm font-semibold text-gray-900">Confirm the final interview slot</p>
                   <div className="mt-3 space-y-2 rounded-2xl border border-amber-200 bg-amber-50 p-3">
                     {[application.suggested_interview_datetime1, application.suggested_interview_datetime2].filter(Boolean).map((slot) => (
@@ -1366,7 +1482,7 @@ export default function ApplicationWorkflow() {
               )}
 
               {(/^Round\d+$/.test(String(application.status || '')) || application.status === 'AwaitingFeedback') && (
-                <div className="rounded-2xl border border-gray-200 p-4">
+                <div className="decision-card">
                   <p className="text-sm font-semibold text-gray-900">Round is active or awaiting feedback</p>
                   <p className="mt-2 text-sm text-gray-600">
                     Use the scheduling workspace for reminders, Teams updates, and no-show handling. Use the reviewer workspace for feedback or additional-round requests.
@@ -1462,7 +1578,7 @@ export default function ApplicationWorkflow() {
           </section>
 
           {activeInterviewTask && (
-            <section className="workspace-card">
+            <section className="workspace-card panel-hover">
               <div className="flex items-center gap-2">
                 <h2 className="section-title">Scheduling & Reminder Desk</h2>
                 <InfoTip text="Recruiters should use the scheduling workspace to confirm slots, trigger Teams invites, and handle reschedules. These reminder shortcuts are here so no one gets stuck waiting." />
@@ -1509,7 +1625,7 @@ export default function ApplicationWorkflow() {
           )}
 
           {requestedRoundExtension && hasRole('hr_admin', 'hr_recruiter') && (
-            <section className="workspace-card border-amber-200">
+            <section className="workspace-card panel-hover border-amber-200">
               <div className="flex items-center gap-2">
                 <h2 className="section-title">Additional Round Requested</h2>
                 <InfoTip text="A reviewer has asked for more interview coverage. Update the round plan here and the ATS will create the next round tasks for the recruiter to schedule." />
@@ -1518,7 +1634,7 @@ export default function ApplicationWorkflow() {
                 {requestedRoundExtension.additional_round_requested_by || 'A reviewer'} requested {requestedRoundExtension.requested_additional_rounds} more round(s).
               </p>
               {requestedRoundExtension.additional_round_request_remarks && (
-                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <div className="mt-3 whitespace-pre-wrap rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   {requestedRoundExtension.additional_round_request_remarks}
                 </div>
               )}
@@ -1562,7 +1678,7 @@ export default function ApplicationWorkflow() {
           )}
 
           {REJECTED_STATUSES.has(application.status) && (
-            <section className="workspace-card">
+            <section className="workspace-card panel-hover">
               <div className="flex items-center gap-2">
                 <h2 className="section-title">Post-Interview Disposition</h2>
                 <InfoTip text="Rejected or closed candidates should be actively dispositioned so recruiters know whether the profile can be reused, moved, removed, or blocked." />
@@ -1639,8 +1755,16 @@ export default function ApplicationWorkflow() {
               </div>
             </section>
           )}
-        </div>
+        </aside>
       </div>
+
+      <section className="workspace-card panel-hover mt-6">
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="section-title">Candidate Timeline & TAT</h2>
+          <InfoTip text="Complete history of events for this application — status changes, document actions, clearance moves, interview events. TAT per step computed here." />
+        </div>
+        <Timeline entityType="application" entityId={application.id} />
+      </section>
     </div>
   );
 }

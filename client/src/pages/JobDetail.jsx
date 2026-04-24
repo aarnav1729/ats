@@ -4,6 +4,7 @@ import { jobsAPI, applicationsAPI, mastersAPI, candidatesAPI, interviewsAPI } fr
 import toast from 'react-hot-toast';
 import AppModal from '../components/AppModal';
 import EmailComposerModal from '../components/EmailComposerModal';
+import Timeline from '../components/Timeline';
 import { formatDateTime, toDatetimeLocalValue } from '../utils/dateTime';
 import {
   getCurrentRoundTask,
@@ -831,12 +832,12 @@ export default function JobDetail() {
 
       {/* Stage View Tab (Kanban) */}
       {activeTab === 'stages' && (
-        <div className="flex gap-4 overflow-x-auto pb-4">
+        <div className="grid gap-4 pb-4 md:grid-cols-2 2xl:grid-cols-3">
           {WORKFLOW_LANES.map((lane, idx) => {
             const stageApps = applicants.filter(a => lane.statuses.includes(a.status));
             const count = stageApps.length;
             return (
-              <div key={lane.key} className="flex-shrink-0 w-72">
+              <div key={lane.key} className="min-w-0">
                 <div className={`rounded-t-lg px-3 py-2 ${STAGE_COLORS[idx % STAGE_COLORS.length]} bg-opacity-20`}>
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-gray-800">{lane.label}</h3>
@@ -850,13 +851,13 @@ export default function JobDetail() {
                   ) : (
                     stageApps.map(app => (
                       <div key={app.id} className="bg-white rounded-lg p-3 shadow-sm border border-gray-100 hover:shadow-md transition-shadow cursor-pointer" onClick={() => openCandidateDetail(app.id)}>
-                        <p className="text-sm font-medium text-gray-900 truncate">{app.candidate_name}</p>
-                        <p className="text-xs text-gray-500 truncate">{app.candidate_email}</p>
+                        <p className="text-sm font-medium text-gray-900 break-words">{app.candidate_name}</p>
+                        <p className="text-xs text-gray-500 break-all">{app.candidate_email}</p>
                         <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_COLORS[app.status] || 'bg-gray-100 text-gray-700'}`}>
                           {app.status}
                         </span>
                         {app.rejection_reason && (
-                          <p className="mt-1 text-xs text-red-600 line-clamp-2">{app.rejection_reason}</p>
+                          <p className="mt-1 text-xs text-red-600 whitespace-normal break-words">{app.rejection_reason}</p>
                         )}
                         <div className="flex items-center justify-between mt-2">
                           <span className="text-xs text-gray-400">{app.source || '-'}</span>
@@ -1524,6 +1525,13 @@ export default function JobDetail() {
         onSend={sendDocumentReminder}
         sending={emailSending}
       />
+
+      {id && (
+        <section className="mt-6 rounded-[28px] border border-gray-100 bg-white p-6 shadow-sm">
+          <h2 className="section-title mb-4">Job Timeline & TAT</h2>
+          <Timeline entityType="job" entityId={id} />
+        </section>
+      )}
     </div>
   );
 }

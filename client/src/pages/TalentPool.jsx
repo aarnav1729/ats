@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import AppModal from '../components/AppModal';
 import InfoTip from '../components/InfoTip';
 import DataTable from '../components/DataTable';
+import { PageHeader, StatCard, SectionCard, StatusPill, toneForStatus } from '../components/ui';
 
 const STATUS_COLORS = {
   InQueue: 'bg-gray-100 text-gray-700', Applied: 'bg-blue-100 text-blue-700',
@@ -263,78 +264,60 @@ export default function TalentPool() {
   };
 
   return (
-    <div className="workspace-shell" style={{ maxWidth: 'none' }}>
-      {/* Header */}
-      <section className="workspace-hero animate-fade-in-up">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <p className="workspace-eyebrow">Talent Pool</p>
-            <h1 className="page-title mt-2">Candidate Inventory</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <InfoTip text="Reusable candidate inventory with source lineage, linked-job context, and full profile views. Open any row to review resumes, update data, or import into a job." />
+    <div className="page-container">
+      <PageHeader
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Talent Pool' }]}
+        title="Talent Pool"
+        subtitle="Reusable candidate inventory with source lineage, linked-job context, and full profile views."
+        meta={[{ label: `${stats.total} candidates` }]}
+        actions={
+          <>
+            <InfoTip text="Open any row to review resumes, update data, or import into a job." />
             <button onClick={() => loadData()} className="btn-secondary">Refresh</button>
             {targetJobId && (
-              <button onClick={() => navigate(`/jobs/${targetJobId}`)} className="btn-secondary">
-                Back to Job
-              </button>
+              <button onClick={() => navigate(`/jobs/${targetJobId}`)} className="btn-secondary">Back to Job</button>
             )}
             <button onClick={() => navigate('/talent-pool/add')} className="btn-primary">+ Add to Pool</button>
-          </div>
-        </div>
-      </section>
+          </>
+        }
+      />
 
-      {/* Target job banner */}
       {targetJobId && (
-        <div className="workspace-card border-indigo-200 bg-indigo-50/70 animate-fade-in-up">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div style={{ border: '1px solid var(--info-hover)', background: 'var(--info-soft)', borderRadius: 'var(--radius-lg)', padding: 16 }}>
+          <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm font-semibold text-indigo-900">Import into Active Job</p>
-              <p className="text-sm text-indigo-700">Click any candidate row, then use Import to attach them.</p>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--info-text)' }}>Import into active job</p>
+              <p style={{ fontSize: 13, color: 'var(--info-text)' }}>Click any candidate row, then use Import to attach them.</p>
             </div>
-            <div className="text-sm font-medium text-indigo-800">
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--info-text)' }}>
               {targetJob?.job_title || targetJob?.job_id || targetJobId}
             </div>
           </div>
         </div>
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 animate-fade-in-up">
-        <div className="metric-tile text-center">
-          <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-          <p className="text-xs text-gray-500">Total</p>
-        </div>
-        <div className="metric-tile text-center">
-          <p className="text-2xl font-bold text-indigo-600">{stats.linkedToJobs}</p>
-          <p className="text-xs text-gray-500">Linked to Jobs</p>
-        </div>
-        <div className="metric-tile text-center">
-          <p className="text-2xl font-bold text-emerald-600">{stats.poolOnly}</p>
-          <p className="text-xs text-gray-500">Pool Only</p>
-        </div>
-        <div className="metric-tile text-center">
-          <p className="text-2xl font-bold text-amber-600">{stats.expiringSoon}</p>
-          <p className="text-xs text-gray-500">Expiring Soon</p>
-        </div>
+      <div className="stat-grid">
+        <StatCard label="Total" value={stats.total} hint="All candidates in the pool." />
+        <StatCard label="Linked to jobs" value={stats.linkedToJobs} deltaTone="info" hint="Currently attached to an open role." />
+        <StatCard label="Pool only" value={stats.poolOnly} deltaTone="success" hint="Available for re-deployment to any job." />
+        <StatCard label="Expiring soon" value={stats.expiringSoon} deltaTone="warning" hint="Pool lifespan ending within 30 days." />
       </div>
 
-      {/* Filters */}
-      <div className="workspace-card animate-fade-in-up">
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-          <input type="text" placeholder="Search name or email..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="input-field col-span-2" />
-          <select value={sourceFilter} onChange={e => { setSourceFilter(e.target.value); setPage(1); }} className="input-field">
-            <option value="">All Sources</option>
+      <SectionCard title="Filter candidates" subtitle="Narrow by source, education, location, or experience range.">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2.5">
+          <input type="text" placeholder="Search name or email…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="input-field col-span-2" style={{ height: 36 }} />
+          <select value={sourceFilter} onChange={e => { setSourceFilter(e.target.value); setPage(1); }} className="input-field" style={{ height: 36 }}>
+            <option value="">All sources</option>
             {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          <input type="text" placeholder="Education..." value={educationFilter} onChange={e => { setEducationFilter(e.target.value); setPage(1); }} className="input-field" />
-          <input type="text" placeholder="Location..." value={locationFilter} onChange={e => { setLocationFilter(e.target.value); setPage(1); }} className="input-field" />
+          <input type="text" placeholder="Education…" value={educationFilter} onChange={e => { setEducationFilter(e.target.value); setPage(1); }} className="input-field" style={{ height: 36 }} />
+          <input type="text" placeholder="Location…" value={locationFilter} onChange={e => { setLocationFilter(e.target.value); setPage(1); }} className="input-field" style={{ height: 36 }} />
           <div className="flex gap-2">
-            <input type="number" placeholder="Exp min" value={expMin} onChange={e => { setExpMin(e.target.value); setPage(1); }} className="input-field w-1/2" min="0" />
-            <input type="number" placeholder="Exp max" value={expMax} onChange={e => { setExpMax(e.target.value); setPage(1); }} className="input-field w-1/2" min="0" />
+            <input type="number" placeholder="Exp min" value={expMin} onChange={e => { setExpMin(e.target.value); setPage(1); }} className="input-field w-1/2" min="0" style={{ height: 36 }} />
+            <input type="number" placeholder="Exp max" value={expMax} onChange={e => { setExpMax(e.target.value); setPage(1); }} className="input-field w-1/2" min="0" style={{ height: 36 }} />
           </div>
         </div>
-      </div>
+      </SectionCard>
 
       {/* Table */}
       <div className="animate-fade-in-up">

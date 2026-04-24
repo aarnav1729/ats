@@ -1,7 +1,8 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
+import haptic from '../utils/haptic';
 
-// ── Icon helpers (inline SVGs to keep the component self-contained) ──────────
+// ── Inline icon helpers ──────────────────────────────────────────────────────
 
 function IconSearch({ className = 'w-4 h-4' }) {
   return (
@@ -19,7 +20,7 @@ function IconFilter({ className = 'w-4 h-4' }) {
   );
 }
 
-function IconChevronUp({ className = 'w-3.5 h-3.5' }) {
+function IconChevronUp({ className = 'w-3 h-3' }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
@@ -27,7 +28,7 @@ function IconChevronUp({ className = 'w-3.5 h-3.5' }) {
   );
 }
 
-function IconChevronDown({ className = 'w-3.5 h-3.5' }) {
+function IconChevronDown({ className = 'w-3 h-3' }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -59,8 +60,6 @@ function IconX({ className = 'w-3.5 h-3.5' }) {
   );
 }
 
-// ── Utility: stable stringify for cell values ────────────────────────────────
-
 function cellToString(value) {
   if (value == null) return '';
   if (typeof value === 'object') return JSON.stringify(value);
@@ -79,13 +78,11 @@ export default function DataTable({
   pageSize: defaultPageSize = 10,
   emptyMessage = 'No data to display.',
 }) {
-  // ── State ────────────────────────────────────────────────────────────────
-
   const [globalSearch, setGlobalSearch] = useState('');
-  const [columnFilters, setColumnFilters] = useState({});      // { [key]: string }
-  const [openFilter, setOpenFilter] = useState(null);          // key of column with open filter
+  const [columnFilters, setColumnFilters] = useState({});
+  const [openFilter, setOpenFilter] = useState(null);
   const [sortKey, setSortKey] = useState(null);
-  const [sortDir, setSortDir] = useState('asc');               // 'asc' | 'desc'
+  const [sortDir, setSortDir] = useState('asc');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [hiddenColumns, setHiddenColumns] = useState(new Set());
   const [showColumnMenu, setShowColumnMenu] = useState(false);
@@ -95,8 +92,6 @@ export default function DataTable({
   const filterInputRef = useRef(null);
   const columnMenuRef = useRef(null);
   const filterPopoverRef = useRef(null);
-
-  // ── Close column-menu on outside click ───────────────────────────────────
 
   useEffect(() => {
     function handleClick(e) {
@@ -115,33 +110,26 @@ export default function DataTable({
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  // Auto-focus filter input when opening
   useEffect(() => {
     if (openFilter && filterInputRef.current) {
       filterInputRef.current.focus();
     }
   }, [openFilter]);
 
-  // ── Visible columns ─────────────────────────────────────────────────────
-
   const visibleColumns = useMemo(
     () => columns.filter((c) => !hiddenColumns.has(c.key)),
     [columns, hiddenColumns],
   );
 
-  // ── Filtering ────────────────────────────────────────────────────────────
-
   const filteredData = useMemo(() => {
     const globalLower = globalSearch.toLowerCase().trim();
     return data.filter((row) => {
-      // Global search: match any visible column
       if (globalLower) {
         const matched = visibleColumns.some((col) =>
           cellToString(row[col.key]).toLowerCase().includes(globalLower),
         );
         if (!matched) return false;
       }
-      // Per-column filters
       for (const [key, filterValue] of Object.entries(columnFilters)) {
         if (!filterValue) continue;
         const cell = cellToString(row[key]).toLowerCase();
@@ -150,8 +138,6 @@ export default function DataTable({
       return true;
     });
   }, [data, globalSearch, columnFilters, visibleColumns]);
-
-  // ── Sorting ──────────────────────────────────────────────────────────────
 
   const sortedData = useMemo(() => {
     if (!sortKey) return filteredData;
@@ -171,8 +157,6 @@ export default function DataTable({
     return copy;
   }, [filteredData, sortKey, sortDir]);
 
-  // ── Pagination ───────────────────────────────────────────────────────────
-
   const totalPages = Math.max(1, Math.ceil(sortedData.length / rowsPerPage));
   const safePage = Math.min(page, totalPages - 1);
   const pageData = useMemo(
@@ -180,10 +164,7 @@ export default function DataTable({
     [sortedData, safePage, rowsPerPage],
   );
 
-  // Reset page when data/filters change
   useEffect(() => { setPage(0); }, [globalSearch, columnFilters, sortKey, sortDir, data]);
-
-  // ── Selection helpers ────────────────────────────────────────────────────
 
   const rowId = useCallback((row, idx) => {
     if (row.id != null) return row.id;
@@ -211,8 +192,6 @@ export default function DataTable({
     setSelectedIds(next);
   }
 
-  // ── Sort handler ─────────────────────────────────────────────────────────
-
   function handleSort(key) {
     if (sortKey === key) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -221,8 +200,6 @@ export default function DataTable({
       setSortDir('asc');
     }
   }
-
-  // ── Column filter handler ────────────────────────────────────────────────
 
   function setColumnFilter(key, value) {
     setColumnFilters((prev) => ({ ...prev, [key]: value }));
@@ -237,8 +214,6 @@ export default function DataTable({
     setOpenFilter(null);
   }
 
-  // ── Toggle column visibility ─────────────────────────────────────────────
-
   function toggleColumn(key) {
     setHiddenColumns((prev) => {
       const next = new Set(prev);
@@ -248,12 +223,9 @@ export default function DataTable({
     });
   }
 
-  // ── Export ───────────────────────────────────────────────────────────────
-
   function handleExport() {
     const selectedRows = sortedData.filter((r, i) => selectedIds.has(rowId(r, i)));
     const exportRows = selectedRows.length > 0 ? selectedRows : sortedData;
-
     const wsData = exportRows.map((row) => {
       const obj = {};
       visibleColumns.forEach((col) => {
@@ -261,149 +233,193 @@ export default function DataTable({
       });
       return obj;
     });
-
     const ws = XLSX.utils.json_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Data');
     XLSX.writeFile(wb, `${exportFileName}.xlsx`);
+    haptic.success();
   }
-
-  // ── Active filters badge count ───────────────────────────────────────────
 
   const activeFilterCount = Object.values(columnFilters).filter(Boolean).length;
 
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="workspace-card" style={{ padding: 0, overflow: 'hidden' }}>
-      {/* ── Header area ───────────────────────────────────────────────── */}
-      <div className="px-6 pt-6 pb-4 space-y-4">
-        {/* Title row */}
-        {(title || subtitle) && (
-          <div className="mb-1">
-            {title && (
-              <h2 className="text-xl font-semibold tracking-[-0.03em] text-gray-950">{title}</h2>
-            )}
-            {subtitle && (
-              <p className="mt-1 text-sm text-gray-500">{subtitle}</p>
-            )}
-          </div>
-        )}
-
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Global search */}
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
-              <IconSearch />
-            </div>
-            <input
-              type="text"
-              className="input-field !py-2.5 !pl-9 !pr-9 !rounded-xl"
-              placeholder="Search all columns..."
-              value={globalSearch}
-              onChange={(e) => setGlobalSearch(e.target.value)}
-              aria-label="Search all columns"
-            />
-            {globalSearch && (
-              <button
-                type="button"
-                className="absolute inset-y-0 right-2.5 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
-                onClick={() => setGlobalSearch('')}
-                aria-label="Clear search"
-              >
-                <IconX />
-              </button>
-            )}
-          </div>
-
-          {/* Active column-filter badges */}
-          {activeFilterCount > 0 && (
-            <span className="glass-chip text-indigo-700">
-              <IconFilter className="w-3.5 h-3.5" />
-              {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''}
-            </span>
+    <div
+      style={{
+        background: 'var(--surface)',
+        border: '1px solid var(--line)',
+        borderRadius: 'var(--radius-lg)',
+        overflow: 'hidden',
+        boxShadow: 'var(--shadow-xs)',
+      }}
+    >
+      {/* Header */}
+      {(title || subtitle) && (
+        <div style={{ padding: '18px 20px 0' }}>
+          {title && (
+            <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-main)', letterSpacing: '-0.01em' }}>
+              {title}
+            </h2>
           )}
-
-          {/* Selected count */}
-          {selectedIds.size > 0 && (
-            <span className="glass-chip text-indigo-700">
-              {selectedIds.size} selected
-            </span>
+          {subtitle && (
+            <p style={{ marginTop: 4, fontSize: 13, color: 'var(--text-faint)' }}>{subtitle}</p>
           )}
+        </div>
+      )}
 
-          <div className="flex-1" />
-
-          {/* Column visibility toggle */}
-          <div className="relative" ref={columnMenuRef}>
+      {/* Toolbar */}
+      <div
+        className="flex flex-wrap items-center gap-2.5"
+        style={{
+          padding: '14px 20px',
+          borderBottom: '1px solid var(--line-subtle)',
+        }}
+      >
+        <div className="relative flex-1 min-w-[220px] max-w-md">
+          <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center" style={{ color: 'var(--text-faint)' }}>
+            <IconSearch />
+          </div>
+          <input
+            type="text"
+            className="input-field"
+            style={{ paddingLeft: 36, paddingRight: 32, height: 36 }}
+            placeholder="Search…"
+            value={globalSearch}
+            onChange={(e) => setGlobalSearch(e.target.value)}
+            aria-label="Search all columns"
+          />
+          {globalSearch && (
             <button
               type="button"
-              className="btn-secondary !px-3 !py-2 inline-flex items-center gap-1.5"
-              onClick={() => setShowColumnMenu((v) => !v)}
-              aria-haspopup="true"
-              aria-expanded={showColumnMenu}
-              aria-label="Toggle column visibility"
+              className="absolute inset-y-0 right-2 flex items-center"
+              style={{ color: 'var(--text-faint)' }}
+              onClick={() => setGlobalSearch('')}
+              aria-label="Clear search"
             >
-              <IconColumns />
-              <span className="hidden sm:inline">Columns</span>
+              <IconX />
             </button>
-            {showColumnMenu && (
-              <div
-                className="absolute right-0 top-full z-30 mt-2 w-56 rounded-2xl border border-gray-200 bg-white p-2 shadow-xl"
-                role="menu"
-              >
-                <p className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-400">
-                  Show / Hide
-                </p>
-                {columns.map((col) => (
-                  <label
-                    key={col.key}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-indigo-50"
-                    role="menuitemcheckbox"
-                    aria-checked={!hiddenColumns.has(col.key)}
-                  >
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      checked={!hiddenColumns.has(col.key)}
-                      onChange={() => toggleColumn(col.key)}
-                    />
-                    {col.label}
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
+          )}
+        </div>
 
-          {/* Export */}
+        {activeFilterCount > 0 && (
+          <span
+            className="inline-flex items-center gap-1"
+            style={{
+              padding: '4px 10px',
+              fontSize: 12,
+              fontWeight: 500,
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--info-soft)',
+              color: 'var(--info-text)',
+            }}
+          >
+            <IconFilter className="w-3 h-3" />
+            {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''}
+          </span>
+        )}
+
+        {selectedIds.size > 0 && (
+          <span
+            style={{
+              padding: '4px 10px',
+              fontSize: 12,
+              fontWeight: 500,
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--info-soft)',
+              color: 'var(--info-text)',
+            }}
+          >
+            {selectedIds.size} selected
+          </span>
+        )}
+
+        <div className="flex-1" />
+
+        <div className="relative" ref={columnMenuRef}>
           <button
             type="button"
-            className="btn-primary !px-3.5 !py-2 inline-flex items-center gap-1.5"
-            onClick={handleExport}
-            aria-label={selectedIds.size > 0 ? `Export ${selectedIds.size} selected rows to Excel` : 'Export all rows to Excel'}
+            className="btn-secondary inline-flex items-center gap-1.5"
+            style={{ height: 36, padding: '0 12px', fontSize: 13 }}
+            onClick={() => {
+              haptic.light();
+              setShowColumnMenu((v) => !v);
+            }}
+            aria-haspopup="true"
+            aria-expanded={showColumnMenu}
           >
-            <IconDownload />
-            <span className="hidden sm:inline">
-              {selectedIds.size > 0 ? `Export (${selectedIds.size})` : 'Export'}
-            </span>
+            <IconColumns />
+            <span className="hidden sm:inline">Columns</span>
           </button>
+          {showColumnMenu && (
+            <div
+              className="absolute right-0 top-full z-30 mt-1.5"
+              style={{
+                width: 220,
+                background: 'var(--surface)',
+                border: '1px solid var(--line)',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: 'var(--shadow-lg)',
+                padding: 6,
+              }}
+              role="menu"
+            >
+              <p style={{ padding: '6px 8px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-faint)' }}>
+                Show / Hide
+              </p>
+              {columns.map((col) => (
+                <label
+                  key={col.key}
+                  className="flex cursor-pointer items-center gap-2"
+                  style={{
+                    padding: '6px 8px',
+                    fontSize: 13,
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'var(--text-body)',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!hiddenColumns.has(col.key)}
+                    onChange={() => {
+                      haptic.light();
+                      toggleColumn(col.key);
+                    }}
+                  />
+                  {col.label}
+                </label>
+              ))}
+            </div>
+          )}
         </div>
+
+        <button
+          type="button"
+          className="btn-primary inline-flex items-center gap-1.5"
+          style={{ height: 36, padding: '0 12px', fontSize: 13 }}
+          onClick={handleExport}
+        >
+          <IconDownload />
+          <span className="hidden sm:inline">
+            {selectedIds.size > 0 ? `Export (${selectedIds.size})` : 'Export'}
+          </span>
+        </button>
       </div>
 
-      {/* ── Table ─────────────────────────────────────────────────────── */}
-      <div className="table-container !rounded-none !border-x-0 !border-b-0 !shadow-none">
-        <table className="w-full text-sm" role="grid">
+      {/* Table */}
+      <div style={{ overflow: 'auto', maxHeight: '70vh' }}>
+        <table className="data-table" role="grid" style={{ width: 'auto', minWidth: '100%', tableLayout: 'auto' }}>
           <thead>
-            <tr className="table-header">
-              {/* Checkbox column */}
-              <th className="w-12 px-4 py-3 text-center" scope="col">
+            <tr>
+              <th style={{ width: 44, textAlign: 'center' }}>
                 <input
                   type="checkbox"
-                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                   checked={allPageSelected}
                   ref={(el) => { if (el) el.indeterminate = somePageSelected && !allPageSelected; }}
                   onChange={toggleSelectAll}
-                  aria-label={allPageSelected ? 'Deselect all rows on this page' : 'Select all rows on this page'}
+                  aria-label="Select all"
                 />
               </th>
               {visibleColumns.map((col) => {
@@ -415,78 +431,85 @@ export default function DataTable({
                 return (
                   <th
                     key={col.key}
-                    className="px-4 py-3 select-none"
                     scope="col"
                     aria-sort={isSorted ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    style={{ whiteSpace: 'nowrap', minWidth: 120, maxWidth: 320 }}
                   >
-                    <div className="flex items-center gap-1.5">
-                      {/* Sort trigger */}
+                    <div className="flex items-center gap-1">
                       {isSortable ? (
                         <button
                           type="button"
-                          className="group inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-gray-500 hover:text-indigo-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 rounded"
-                          onClick={() => handleSort(col.key)}
-                          aria-label={`Sort by ${col.label}`}
+                          className="inline-flex items-center gap-1"
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.06em',
+                            color: isSorted ? 'var(--text-main)' : 'var(--text-faint)',
+                          }}
+                          onClick={() => { haptic.light(); handleSort(col.key); }}
                         >
                           {col.label}
-                          <span className={`inline-flex flex-col transition-opacity ${isSorted ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'}`}>
-                            {isSorted && sortDir === 'asc' && <IconChevronUp className="w-3 h-3" />}
-                            {isSorted && sortDir === 'desc' && <IconChevronDown className="w-3 h-3" />}
-                            {!isSorted && <IconChevronUp className="w-3 h-3" />}
-                          </span>
+                          {isSorted && (sortDir === 'asc' ? <IconChevronUp /> : <IconChevronDown />)}
                         </button>
                       ) : (
-                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                        <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-faint)' }}>
                           {col.label}
                         </span>
                       )}
 
-                      {/* Column filter trigger */}
                       {isFilterable && (
                         <div className="relative">
                           <button
                             type="button"
                             data-filter-trigger
-                            className={`p-0.5 rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
-                              hasFilter
-                                ? 'text-indigo-600'
-                                : 'text-gray-300 hover:text-gray-500'
-                            }`}
-                            onClick={() => setOpenFilter((prev) => (prev === col.key ? null : col.key))}
+                            style={{
+                              padding: 2,
+                              borderRadius: 4,
+                              color: hasFilter ? 'var(--accent-blue)' : 'var(--line-strong)',
+                            }}
+                            onClick={() => {
+                              haptic.light();
+                              setOpenFilter((prev) => (prev === col.key ? null : col.key));
+                            }}
                             aria-label={`Filter ${col.label}`}
-                            aria-expanded={openFilter === col.key}
                           >
-                            <IconFilter className="w-3.5 h-3.5" />
+                            <IconFilter className="w-3 h-3" />
                           </button>
 
-                          {/* Filter popover */}
                           {openFilter === col.key && (
                             <div
                               ref={filterPopoverRef}
-                              className="absolute left-0 top-full z-30 mt-2 w-56 rounded-xl border border-gray-200 bg-white p-3 shadow-xl"
+                              className="absolute left-0 top-full z-30 mt-1.5"
+                              style={{
+                                width: 220,
+                                background: 'var(--surface)',
+                                border: '1px solid var(--line)',
+                                borderRadius: 'var(--radius-md)',
+                                boxShadow: 'var(--shadow-lg)',
+                                padding: 10,
+                              }}
                               role="dialog"
-                              aria-label={`Filter by ${col.label}`}
                             >
-                              <label className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 mb-1.5">
+                              <label style={{ display: 'block', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-faint)', marginBottom: 6 }}>
                                 Filter {col.label}
                               </label>
                               <input
                                 ref={filterInputRef}
                                 type="text"
-                                className="input-field !py-2 !text-sm"
-                                placeholder={`Filter ${col.label}...`}
+                                className="input-field"
+                                style={{ height: 32, fontSize: 13 }}
+                                placeholder={`Filter ${col.label}…`}
                                 value={columnFilters[col.key] || ''}
                                 onChange={(e) => setColumnFilter(col.key, e.target.value)}
                                 onKeyDown={(e) => {
-                                  if (e.key === 'Escape') setOpenFilter(null);
-                                  if (e.key === 'Enter') setOpenFilter(null);
+                                  if (e.key === 'Escape' || e.key === 'Enter') setOpenFilter(null);
                                 }}
-                                aria-label={`Filter value for ${col.label}`}
                               />
                               {hasFilter && (
                                 <button
                                   type="button"
-                                  className="mt-2 text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+                                  style={{ marginTop: 8, fontSize: 12, fontWeight: 500, color: 'var(--accent-blue)' }}
                                   onClick={() => clearColumnFilter(col.key)}
                                 >
                                   Clear filter
@@ -508,7 +531,7 @@ export default function DataTable({
               <tr>
                 <td
                   colSpan={visibleColumns.length + 1}
-                  className="px-6 py-16 text-center text-sm text-gray-400"
+                  style={{ padding: '48px 24px', textAlign: 'center', fontSize: 13, color: 'var(--text-faint)' }}
                 >
                   {emptyMessage}
                 </td>
@@ -522,32 +545,45 @@ export default function DataTable({
                 return (
                   <tr
                     key={id}
-                    className={`table-row cursor-pointer ${isSelected ? '!bg-indigo-50/60' : ''}`}
-                    onClick={() => onRowClick?.(row)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        onRowClick?.(row);
-                      }
+                    style={{
+                      cursor: onRowClick ? 'pointer' : 'default',
+                      background: isSelected ? 'var(--info-soft)' : undefined,
                     }}
-                    tabIndex={0}
+                    onClick={() => {
+                      if (onRowClick) haptic.light();
+                      onRowClick?.(row);
+                    }}
+                    tabIndex={onRowClick ? 0 : -1}
                     role="row"
                     aria-selected={isSelected}
                   >
-                    <td className="w-12 px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                    <td style={{ width: 44, textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                         checked={isSelected}
-                        onChange={() => toggleSelect(id)}
+                        onChange={() => { haptic.light(); toggleSelect(id); }}
                         aria-label={`Select row ${globalIdx + 1}`}
                       />
                     </td>
-                    {visibleColumns.map((col) => (
-                      <td key={col.key} className="px-4 py-3 text-gray-700">
-                        {col.render ? col.render(row) : cellToString(row[col.key])}
-                      </td>
-                    ))}
+                    {visibleColumns.map((col) => {
+                      const raw = col.render ? col.render(row) : cellToString(row[col.key]);
+                      const titleAttr = typeof raw === 'string' ? raw : undefined;
+                      return (
+                        <td
+                          key={col.key}
+                          title={titleAttr}
+                          style={{
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: 320,
+                            minWidth: 120,
+                          }}
+                        >
+                          {raw}
+                        </td>
+                      );
+                    })}
                   </tr>
                 );
               })
@@ -556,70 +592,80 @@ export default function DataTable({
         </table>
       </div>
 
-      {/* ── Pagination ────────────────────────────────────────────────── */}
+      {/* Pagination */}
       {sortedData.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-4 border-t border-gray-100 text-sm">
-          <div className="flex items-center gap-2 text-gray-500">
+        <div
+          className="flex flex-wrap items-center justify-between gap-3"
+          style={{
+            padding: '12px 20px',
+            borderTop: '1px solid var(--line-subtle)',
+            fontSize: 13,
+          }}
+        >
+          <div className="flex items-center gap-2" style={{ color: 'var(--text-faint)' }}>
             <span>Rows per page:</span>
             <select
-              className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm font-medium text-gray-700 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition-all cursor-pointer"
               value={rowsPerPage}
               onChange={(e) => {
+                haptic.light();
                 setRowsPerPage(Number(e.target.value));
                 setPage(0);
               }}
-              aria-label="Rows per page"
+              style={{
+                border: '1px solid var(--line)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '4px 8px',
+                fontSize: 13,
+                background: 'var(--surface)',
+                color: 'var(--text-body)',
+              }}
             >
               {[5, 10, 20, 50, 100].map((n) => (
                 <option key={n} value={n}>{n}</option>
               ))}
             </select>
-            <span className="ml-2 text-gray-400">
-              {safePage * rowsPerPage + 1}
-              &ndash;
-              {Math.min((safePage + 1) * rowsPerPage, sortedData.length)}
-              {' '}of{' '}
-              {sortedData.length}
+            <span style={{ marginLeft: 8 }}>
+              {safePage * rowsPerPage + 1}–{Math.min((safePage + 1) * rowsPerPage, sortedData.length)} of {sortedData.length}
             </span>
           </div>
 
           <div className="flex items-center gap-1">
             <button
               type="button"
-              className="btn-secondary !px-3 !py-1.5 !text-xs disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+              className="btn-secondary"
+              style={{ height: 30, padding: '0 10px', fontSize: 12 }}
               disabled={safePage === 0}
-              onClick={() => setPage(0)}
-              aria-label="First page"
+              onClick={() => { haptic.light(); setPage(0); }}
             >
               First
             </button>
             <button
               type="button"
-              className="btn-secondary !px-3 !py-1.5 !text-xs disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+              className="btn-secondary"
+              style={{ height: 30, padding: '0 10px', fontSize: 12 }}
               disabled={safePage === 0}
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              aria-label="Previous page"
+              onClick={() => { haptic.light(); setPage((p) => Math.max(0, p - 1)); }}
             >
               Prev
             </button>
-            <span className="px-3 py-1.5 text-xs font-semibold text-gray-600">
+            <span style={{ padding: '0 10px', fontSize: 12, fontWeight: 600, color: 'var(--text-body)' }}>
               {safePage + 1} / {totalPages}
             </span>
             <button
               type="button"
-              className="btn-secondary !px-3 !py-1.5 !text-xs disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+              className="btn-secondary"
+              style={{ height: 30, padding: '0 10px', fontSize: 12 }}
               disabled={safePage >= totalPages - 1}
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              aria-label="Next page"
+              onClick={() => { haptic.light(); setPage((p) => Math.min(totalPages - 1, p + 1)); }}
             >
               Next
             </button>
             <button
               type="button"
-              className="btn-secondary !px-3 !py-1.5 !text-xs disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+              className="btn-secondary"
+              style={{ height: 30, padding: '0 10px', fontSize: 12 }}
               disabled={safePage >= totalPages - 1}
-              onClick={() => setPage(totalPages - 1)}
-              aria-label="Last page"
+              onClick={() => { haptic.light(); setPage(totalPages - 1); }}
             >
               Last
             </button>

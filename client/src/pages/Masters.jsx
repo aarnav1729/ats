@@ -3,6 +3,7 @@ import { mastersAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import EmployeeAutocompleteField from '../components/EmployeeAutocompleteField';
 import DataTable from '../components/DataTable';
+import { PageHeader, Tabs, StatusPill } from '../components/ui';
 
 const MASTER_TYPES = [
   { key: 'business-units', label: 'Business Units', fields: [
@@ -89,6 +90,13 @@ function getFieldDisplayValue(item, field) {
     return name && email ? `${name} (${email})` : name || email;
   }
   return item[field.name] || '-';
+}
+
+function isActiveRow(item) {
+  return item?.active_flag !== false
+    && item?.active_flag !== 0
+    && item?.active_flag !== '0'
+    && item?.active_flag !== 'false';
 }
 
 export default function Masters() {
@@ -191,82 +199,123 @@ export default function Masters() {
     if (!search) return true;
     return Object.values(item).some(v => String(v).toLowerCase().includes(search.toLowerCase()));
   });
+  const [activeRows, inactiveRows] = useMemo(() => {
+    const active = [];
+    const inactive = [];
+
+    filteredData.forEach((item) => {
+      if (isActiveRow(item)) active.push(item);
+      else inactive.push(item);
+    });
+
+    return [active, inactive];
+  }, [filteredData]);
 
   const displayFields = currentType.fields.filter(f => f.type !== 'checkbox' && f.type !== 'textarea');
 
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="page-title">Masters</h1>
-          <p className="mt-1 text-sm text-gray-500">Maintain the dropdowns, reasons, and approval mappings that drive the ATS workflow.</p>
+  const tabsConfig = MASTER_TYPES.map(t => ({ value: t.key, label: t.label }));
+  const tableColumns = [
+    ...displayFields.map(f => ({
+      key: f.name,
+      label: f.label,
+      render: (row) => getFieldDisplayValue(row, f),
+    })),
+    {
+      key: 'active_flag',
+      label: 'Status',
+      render: (row) => (
+        <StatusPill tone={isActiveRow(row) ? 'success' : 'danger'}>
+          {isActiveRow(row) ? 'Active' : 'Inactive'}
+        </StatusPill>
+      ),
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      sortable: false,
+      filterable: false,
+      render: (row) => (
+        <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+          <button onClick={() => openEdit(row)} className="table-link">Edit</button>
+          {isActiveRow(row) && (
+            <button onClick={() => handleDelete(row.id)} className="table-link" style={{ color: 'var(--danger-text)' }}>Deactivate</button>
+          )}
         </div>
-        <button onClick={openCreate} className="btn-primary">+ Add {currentType.label.replace(/s$/, '')}</button>
-      </div>
+      ),
+    },
+  ];
 
-      {/* Tabs - scrollable */}
-      <div className="flex gap-1 mb-4 overflow-x-auto pb-2 border-b border-gray-200">
-        {MASTER_TYPES.map(type => (
-          <button
-            key={type.key}
-            onClick={() => setActiveTab(type.key)}
-            className={`px-4 py-2 text-sm font-medium rounded-t-lg whitespace-nowrap transition-colors ${
-              activeTab === type.key
-                ? 'bg-indigo-600 text-white'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            {type.label}
+  return (
+    <div className="page-container space-y-8">
+      <PageHeader
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Masters' }]}
+        title="Masters"
+        subtitle="Maintain the dropdowns, reasons, and approval mappings that drive the ATS workflow."
+        meta={[
+          { label: `${activeRows.length} active`, tone: 'success' },
+          { label: `${inactiveRows.length} inactive` },
+        ]}
+        actions={
+          <button onClick={openCreate} className="btn-primary">
+            + Add {currentType.label.replace(/s$/, '')}
           </button>
-        ))}
+        }
+      />
+
+      <Tabs
+        tabs={tabsConfig}
+        value={activeTab}
+        onChange={setActiveTab}
+        variant="underline"
+      />
+
+      <div className="flex items-center gap-3">
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search…"
+          className="input-field"
+          style={{ maxWidth: 280, height: 36 }}
+        />
       </div>
 
-      {/* Search */}
-      <div className="mb-4">
-        <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="input-field max-w-xs" />
-      </div>
+      {loading ? (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)', padding: 48, textAlign: 'center', color: 'var(--text-faint)', fontSize: 13 }}>
+          Loading…
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <DataTable
+            title={`Active ${currentType.label}`}
+            subtitle="Primary values currently available across the ATS."
+            data={activeRows}
+            columns={tableColumns}
+            emptyMessage="No active records found"
+            exportFileName={`masters-${activeTab}-active`}
+          />
 
-      {/* Table */}
-      <div className="table-container">
-        <table className="w-full">
-          <thead><tr className="table-header">
-            {displayFields.map(f => <th key={f.name} className="px-4 py-3">{f.label}</th>)}
-            <th className="px-4 py-3">Status</th>
-            <th className="px-4 py-3">Actions</th>
-          </tr></thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={displayFields.length + 2} className="px-4 py-12 text-center text-gray-400">Loading...</td></tr>
-            ) : filteredData.length === 0 ? (
-              <tr><td colSpan={displayFields.length + 2} className="px-4 py-12 text-center text-gray-400">No data found</td></tr>
-            ) : filteredData.map(item => (
-              <tr key={item.id} className="table-row">
-                {displayFields.map(f => (
-                  <td key={f.name} className="px-4 py-3 text-sm text-gray-700">{getFieldDisplayValue(item, f)}</td>
-                ))}
-                <td className="px-4 py-3">
-                  <span className={`badge ${item.active_flag ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {item.active_flag ? 'Active' : 'Inactive'}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-2">
-                    <button onClick={() => openEdit(item)} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">Edit</button>
-                    {item.active_flag && <button onClick={() => handleDelete(item.id)} className="text-sm text-red-600 hover:text-red-800 font-medium">Deactivate</button>}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          <DataTable
+            title={`Inactive ${currentType.label}`}
+            subtitle="Retained for reference and reactivation decisions."
+            data={inactiveRows}
+            columns={tableColumns}
+            emptyMessage="No inactive records found"
+            exportFileName={`masters-${activeTab}-inactive`}
+          />
+        </div>
+      )}
 
       {/* Modal */}
       {modalOpen && (
-        <div className="app-modal-backdrop">
-          <div className="app-modal-panel app-modal-panel-wide">
+        <div className="app-modal-backdrop" onClick={() => { setModalOpen(false); setEditItem(null); }}>
+          <div className="app-modal-panel app-modal-panel-wide" onClick={e => e.stopPropagation()}>
+            <div className="app-modal-header">
+              <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-main)' }}>
+                {editItem ? 'Edit' : 'Create'} {currentType.label.replace(/s$/, '')}
+              </h2>
+            </div>
             <div className="app-modal-body overflow-y-auto" style={{ maxHeight: 'calc(90vh - 120px)' }}>
-            <h2 className="text-lg font-semibold mb-4">{editItem ? 'Edit' : 'Create'} {currentType.label.replace(/s$/, '')}</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               {currentType.fields.map(field => (
                 <div key={field.name}>

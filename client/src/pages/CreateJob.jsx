@@ -823,7 +823,7 @@ export default function CreateJob() {
         {form.job_description && (
           <div className="mt-4 border-t border-gray-100 pt-4">
             <p className="mb-1 text-xs font-medium text-gray-500">Job Description</p>
-            <p className="line-clamp-6 whitespace-pre-wrap text-sm text-gray-700">{form.job_description}</p>
+            <p className="whitespace-pre-wrap break-words text-sm text-gray-700">{form.job_description}</p>
           </div>
         )}
       </div>
@@ -831,7 +831,7 @@ export default function CreateJob() {
   );
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="page-shell">
       <div className="mb-6 flex items-center gap-3">
         <button onClick={() => navigate('/jobs')} className="text-gray-400 hover:text-gray-600">
           <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>

@@ -26,6 +26,7 @@ const DEFAULT_FORM = {
   source: '',
   referrer_emp_id: '',
   consultant_code: '',
+  dob: '',
 };
 
 function isPreviewableFile(filePath = '') {
@@ -115,6 +116,7 @@ export default function AddCandidate() {
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(isEdit);
+  const [duplicateWarning, setDuplicateWarning] = useState('');
   const [resumeFile, setResumeFile] = useState(null);
   const [uploadedResume, setUploadedResume] = useState(null);
   const [resumeInsights, setResumeInsights] = useState(null);
@@ -146,6 +148,7 @@ export default function AddCandidate() {
           source: candidate.source || '',
           referrer_emp_id: candidate.referrer_emp_id || '',
           consultant_code: candidate.consultant_code || '',
+          dob: candidate.dob ? candidate.dob.split('T')[0] : '',
         };
         const nextResume = candidate.resume_path || candidate.resume_file_name
           ? {
@@ -229,6 +232,18 @@ export default function AddCandidate() {
       toast.error('Name and email are required');
       return;
     }
+    if (!form.source) {
+      toast.error('Source is required — select how this candidate was sourced');
+      return;
+    }
+    if (form.candidate_phone) {
+      const digits = form.candidate_phone.replace(/\D/g, '');
+      if (digits.length !== 10) {
+        toast.error('Phone number must be exactly 10 digits');
+        return;
+      }
+    }
+    setDuplicateWarning('');
 
     setSaving(true);
     try {
@@ -259,11 +274,17 @@ export default function AddCandidate() {
           resume_path: resumeMeta?.path || undefined,
           created_by: user.email,
         };
-        await applicationsAPI.create(data);
-        toast.success('Candidate added successfully');
+        const res = await applicationsAPI.create(data);
+        const warnings = res.data?._warnings || [];
+        if (warnings.length) {
+          setDuplicateWarning(warnings[0]);
+          toast('Candidate added — ' + warnings[0], { icon: '⚠️' });
+        } else {
+          toast.success('Candidate added successfully');
+        }
       }
 
-      navigate(isTalentPool ? '/talent-pool' : `/jobs/${jobId}`);
+      if (!warnings?.length) navigate(isTalentPool ? '/talent-pool' : `/jobs/${jobId}`);
     } catch (err) {
       toast.error(err.response?.data?.error || `Failed to ${isEdit ? 'update' : 'add'} candidate`);
     } finally {
@@ -396,8 +417,21 @@ export default function AddCandidate() {
                 <input type="email" value={form.candidate_email} onChange={(event) => updateForm('candidate_email', event.target.value)} className="input-field" required />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-2">Phone</label>
-                <input type="text" value={form.candidate_phone} onChange={(event) => updateForm('candidate_phone', event.target.value)} className="input-field" />
+                <label className="block text-sm font-semibold text-gray-800 mb-2">Phone <span className="text-gray-400 font-normal text-xs">(10 digits)</span></label>
+                <input
+                  type="tel"
+                  value={form.candidate_phone}
+                  onChange={(event) => {
+                    const digits = event.target.value.replace(/\D/g, '').slice(0, 10);
+                    updateForm('candidate_phone', digits);
+                  }}
+                  className={`input-field ${form.candidate_phone && form.candidate_phone.replace(/\D/g,'').length !== 10 ? 'border-amber-400 focus:ring-amber-400' : ''}`}
+                  maxLength={10}
+                  placeholder="10-digit mobile number"
+                />
+                {form.candidate_phone && form.candidate_phone.replace(/\D/g,'').length !== 10 && (
+                  <p className="mt-1 text-xs text-amber-600">Enter exactly 10 digits</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-800 mb-2">Gender</label>
@@ -448,11 +482,16 @@ export default function AddCandidate() {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-2">Source</label>
-                <select value={form.source} onChange={(event) => updateForm('source', event.target.value)} className="input-field">
-                  <option value="">Select</option>
+                <label className="block text-sm font-semibold text-gray-800 mb-2">Source <span className="text-red-500">*</span></label>
+                <select value={form.source} onChange={(event) => updateForm('source', event.target.value)} className={`input-field ${!form.source ? 'border-red-300 ring-1 ring-red-200' : ''}`} required>
+                  <option value="">Select source — required</option>
                   {SOURCES.map((source) => <option key={source} value={source}>{source}</option>)}
                 </select>
+                {!form.source && <p className="mt-1 text-xs text-red-500">Sourcing channel is required</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-800 mb-2">Date of Birth <span className="text-gray-400 font-normal text-xs">(optional)</span></label>
+                <input type="date" value={form.dob} onChange={(event) => updateForm('dob', event.target.value)} className="input-field" max={new Date().toISOString().split('T')[0]} />
               </div>
               {form.source === 'Employee Referral' && (
                 <div>
@@ -472,6 +511,16 @@ export default function AddCandidate() {
               </div>
             </div>
 
+            {duplicateWarning && (
+              <div className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <svg className="mt-0.5 h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
+                <div>
+                  <p className="font-semibold">Duplicate phone detected</p>
+                  <p className="mt-0.5">{duplicateWarning}</p>
+                  <button type="button" onClick={() => navigate(isTalentPool ? '/talent-pool' : `/jobs/${jobId}`)} className="mt-2 font-semibold text-amber-700 underline underline-offset-2">Continue anyway →</button>
+                </div>
+              </div>
+            )}
             <div className="mt-8 flex flex-wrap gap-3 border-t border-gray-100 pt-5">
               <button type="submit" disabled={saving} className="btn-primary disabled:opacity-50">
                 {saving ? 'Saving…' : isEdit ? 'Save Candidate Changes' : 'Create Candidate'}
