@@ -612,7 +612,9 @@ router.get('/monthly-offers', adminOrRecruiter, async (req, res) => {
       LEFT JOIN jobs j ON a.ats_job_id = j.job_id
       LEFT JOIN users u ON LOWER(u.email) = LOWER(a.recruiter_email)
       ${whereClause}
-      GROUP BY TO_CHAR(COALESCE(a.joining_date::timestamp, a.updated_at, a.created_at), 'YYYY-MM'), a.recruiter_email, u.name
+      GROUP BY TO_CHAR(COALESCE(a.joining_date::timestamp, a.updated_at, a.created_at), 'YYYY-MM'),
+               COALESCE(a.recruiter_email, 'Unassigned'),
+               COALESCE(u.name, a.recruiter_email, 'Unassigned')
       ORDER BY month DESC, offers DESC
     `, params);
 
@@ -780,7 +782,8 @@ router.get('/recruiter-sourcing', adminOrRecruiter, async (req, res) => {
       LEFT JOIN jobs j ON a.ats_job_id = j.job_id
       LEFT JOIN users u ON LOWER(u.email) = LOWER(a.recruiter_email)
       ${whereClause}
-      GROUP BY a.recruiter_email, u.name
+      GROUP BY COALESCE(a.recruiter_email, 'Unassigned'),
+               COALESCE(u.name, a.recruiter_email, 'Unassigned')
       ORDER BY total DESC
     `, params);
 

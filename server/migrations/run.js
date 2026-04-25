@@ -682,6 +682,7 @@ export async function ensureSchema() {
       token VARCHAR(128) UNIQUE
     );
     CREATE INDEX IF NOT EXISTS idx_ctc_req_app ON ctc_acceptance_requests (application_id);
+    ALTER TABLE ctc_acceptance_requests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;
 
     -- Store CTC as formatted text alongside JSON
     ALTER TABLE candidate_clearance ADD COLUMN IF NOT EXISTS ctc_text TEXT;

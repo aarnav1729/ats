@@ -339,10 +339,19 @@ router.put('/:id/feedback', adminOrInterviewer, async (req, res) => {
       const round = existing.rows[0].round_number;
       const totalRounds = application.no_of_rounds || 3;
       if (round >= totalRounds) {
+        // Final-round shortlist → mark Selected then immediately advance to
+        // OfferInProcess so HR/clearance flow kicks in without a manual hop.
         await pool.query(
-          "UPDATE applications SET status = 'Selected', interviewer_final_decision = 'shortlist', updated_at = NOW() WHERE id = $1",
+          "UPDATE applications SET status = 'OfferInProcess', interviewer_final_decision = 'shortlist', updated_at = NOW() WHERE id = $1",
           [application.id]
         );
+        if (application.recruiter_email) {
+          await sendNotificationEmail(
+            application.recruiter_email,
+            'Candidate cleared final round — start clearance',
+            `<p><strong>${application.candidate_name}</strong> cleared the final interview round and has been auto-moved to <strong>Offer In Process</strong>. Open clearance to begin offer prep.</p>`
+          ).catch(() => {});
+        }
       } else {
         await pool.query(
           "UPDATE applications SET status = 'AwaitingInterviewScheduling', updated_at = NOW() WHERE id = $1",

@@ -57,6 +57,23 @@ router.post('/verify-otp', async (req, res) => {
   }
 });
 
+router.post('/logout', authMiddleware, async (req, res) => {
+  try {
+    await logAudit({
+      actionBy: req.user.email,
+      actionType: 'delete',
+      entityType: 'session',
+      entityId: req.user.id,
+      metadata: { reason: 'user_logout' },
+    });
+    res.json({ message: 'Logged out' });
+  } catch (err) {
+    console.error('Logout error:', err);
+    // Logout must always succeed from the client's perspective.
+    res.json({ message: 'Logged out' });
+  }
+});
+
 router.get('/me', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query('SELECT id, email, role, name, is_active FROM users WHERE id = $1', [req.user.id]);

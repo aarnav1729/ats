@@ -72,7 +72,7 @@ router.get('/jobs/:jobId', async (req, res) => {
        LEFT JOIN phases p ON j.phase_id = p.id
        WHERE (j.job_id = $1 ${isNumeric ? 'OR j.id = ' + parseInt(param, 10) : ''})
          AND j.active_flag = true
-         AND LOWER(COALESCE(j.status, 'draft')) NOT IN ('archived')
+         AND LOWER(COALESCE(j.status, 'draft')) NOT IN ('archived','closed','on_hold','filled','cancelled')
        LIMIT 1`,
       [param]
     );
@@ -146,6 +146,10 @@ router.post('/jobs/:jobId/apply', upload.single('resume'), async (req, res) => {
       return res.status(404).json({ error: 'Job not found or no longer open' });
     }
     const job = jobLookup.rows[0];
+    const jobStatus = String(job.status || '').toLowerCase();
+    if (['closed', 'archived', 'on_hold', 'filled', 'cancelled'].includes(jobStatus)) {
+      return res.status(410).json({ error: 'This role is no longer accepting applications.' });
+    }
 
     const payload = { ...(req.body || {}) };
     if (req.file) {

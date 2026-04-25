@@ -197,14 +197,30 @@ export async function ensureInterviewTasksForRound(client, application, roundNum
 export const HR_MANAGED_TRANSITIONS = {
   InQueue: ['Applied', 'HRRejected', 'Withdrawn'],
   Applied: ['Shortlisted', 'HRRejected', 'Withdrawn'],
-  Shortlisted: ['AwaitingHODResponse', 'HRRejected'],
-  Selected: ['OfferInProcess', 'OfferRejected'],
-  OfferInProcess: ['Offered', 'OfferRejected'],
+  Shortlisted: ['AwaitingHODResponse', 'HRRejected', 'Withdrawn'],
+  AwaitingHODResponse: ['AwaitingInterviewScheduling', 'HODRejected', 'Withdrawn'],
+  AwaitingInterviewScheduling: ['Round1', 'Round2', 'Round3', 'HRRejected', 'Withdrawn'],
+  Round1: ['Round1Rejected', 'AwaitingFeedback', 'Round2', 'Selected', 'Withdrawn'],
+  Round2: ['Round2Rejected', 'AwaitingFeedback', 'Round3', 'Selected', 'Withdrawn'],
+  Round3: ['Round3Rejected', 'AwaitingFeedback', 'Selected', 'Withdrawn'],
+  AwaitingFeedback: ['Selected', 'Round1Rejected', 'Round2Rejected', 'Round3Rejected', 'Withdrawn'],
+  Selected: ['OfferInProcess', 'OfferRejected', 'Withdrawn'],
+  OfferInProcess: ['Offered', 'OfferRejected', 'Withdrawn'],
   Offered: ['OfferAccepted', 'OfferRejected', 'OfferDropout'],
   OfferAccepted: ['Joined', 'OfferDropout'],
 };
 
+// Terminal states from which no further transitions are permitted.
+const TERMINAL_STATES = new Set([
+  'HRRejected', 'HODRejected', 'Round1Rejected', 'Round2Rejected', 'Round3Rejected',
+  'OfferRejected', 'OfferDropout', 'Withdrawn', 'Joined',
+]);
+
 export function assertHrManagedTransition(currentStatus, nextStatus, options = {}) {
+  if (currentStatus === nextStatus) return;
+  if (TERMINAL_STATES.has(currentStatus)) {
+    throw new Error(`${currentStatus} is a terminal state; cannot move to ${nextStatus}`);
+  }
   const allowed = HR_MANAGED_TRANSITIONS[currentStatus] || [];
   if (!allowed.includes(nextStatus)) {
     throw new Error(`Cannot move candidate from ${currentStatus} to ${nextStatus} from the HR workflow`);

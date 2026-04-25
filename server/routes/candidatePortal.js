@@ -273,16 +273,27 @@ router.post('/documents/:docId/upload', candidateOnly, upload.single('file'), as
 });
 
 // ── HR: list pending documents across all candidates (review queue) ───────
+// hr_admin sees the full queue; hr_recruiter only sees docs on applications
+// where they are the primary or secondary recruiter.
 router.get('/review-queue', hrAny, async (req, res) => {
   try {
+    const isAdmin = req.user.role === 'hr_admin';
+    const params = [];
+    let scopeClause = '';
+    if (!isAdmin) {
+      params.push(String(req.user.email || '').toLowerCase());
+      scopeClause = `AND (LOWER(a.recruiter_email) = $${params.length} OR LOWER(a.secondary_recruiter_email) = $${params.length})`;
+    }
     const rows = await pool.query(
       `SELECT d.*, a.application_id, a.candidate_name, a.candidate_email, a.status AS application_status,
+              a.recruiter_email, a.secondary_recruiter_email,
               j.job_title, j.job_id
        FROM candidate_documents d
        JOIN applications a ON a.id = d.application_id
        LEFT JOIN jobs j ON j.job_id = a.ats_job_id
-       WHERE d.status = 'uploaded'
-       ORDER BY d.uploaded_at ASC NULLS LAST`
+       WHERE d.status = 'uploaded' ${scopeClause}
+       ORDER BY d.uploaded_at ASC NULLS LAST`,
+      params
     );
     res.json({ items: rows.rows });
   } catch (err) {
@@ -423,9 +434,17 @@ router.post('/:applicationId/ctc-request', hrAny, async (req, res) => {
     const application = appQ.rows[0];
 
     const token = crypto.randomBytes(24).toString('hex');
+    // 7-day expiry; auto-expires older pending requests for the same application.
+    await pool.query(
+      `UPDATE ctc_acceptance_requests
+          SET status = 'expired'
+        WHERE application_id = $1
+          AND status = 'pending'`,
+      [application.id]
+    );
     const ins = await pool.query(
-      `INSERT INTO ctc_acceptance_requests (application_id, requested_by, ctc_snapshot, ctc_text, token)
-       VALUES ($1, $2, $3::jsonb, $4, $5) RETURNING *`,
+      `INSERT INTO ctc_acceptance_requests (application_id, requested_by, ctc_snapshot, ctc_text, token, expires_at)
+       VALUES ($1, $2, $3::jsonb, $4, $5, NOW() + INTERVAL '7 days') RETURNING *`,
       [application.id, req.user.email, JSON.stringify(ctc_snapshot || {}), ctc_text || null, token]
     );
 
@@ -478,6 +497,10 @@ router.post('/ctc-request/:requestId/respond', candidateOnly, async (req, res) =
     );
     if (!rq.rows.length) return res.status(404).json({ error: 'CTC request not found' });
     if (rq.rows[0].status !== 'pending') return res.status(409).json({ error: 'Already responded' });
+    if (rq.rows[0].expires_at && new Date(rq.rows[0].expires_at).getTime() < Date.now()) {
+      await pool.query(`UPDATE ctc_acceptance_requests SET status = 'expired' WHERE id = $1`, [rq.rows[0].id]);
+      return res.status(410).json({ error: 'This CTC request has expired. Please contact HR for a new offer.' });
+    }
 
     const updated = await pool.query(
       `UPDATE ctc_acceptance_requests SET status = $1, response_notes = $2, responded_at = NOW()

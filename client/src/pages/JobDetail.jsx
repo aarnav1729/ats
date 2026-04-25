@@ -747,67 +747,104 @@ export default function JobDetail() {
         </nav>
       </div>
 
-      {/* All Applicants Tab */}
+      {/* ─── Workflow Queue Tab ──────────────────────────────────────── */}
       {activeTab === 'applicants' && (
-        <div>
-          <div className="flex flex-col md:flex-row gap-3 mb-4">
-            <input type="text" placeholder="Search by name, email, phone..." value={appSearch} onChange={e => { setAppSearch(e.target.value); setAppPage(1); }} className="input-field flex-1" />
-            <select value={appStatusFilter} onChange={e => { setAppStatusFilter(e.target.value); setAppPage(1); }} className="input-field w-auto">
-              <option value="">All Statuses</option>
-              {ALL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+        <div className="w-full space-y-4">
+          {/* Sticky toolbar — search left, filters middle, primary CTA right */}
+          <div className="sticky top-0 z-10 -mx-1 rounded-xl border border-slate-200 bg-white/95 px-3 py-3 shadow-sm backdrop-blur">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="relative flex-1 min-w-0">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+                <input
+                  type="text"
+                  placeholder="Search by name, email, or phone…"
+                  value={appSearch}
+                  onChange={e => { setAppSearch(e.target.value); setAppPage(1); }}
+                  className="input-field w-full pl-9"
+                />
+              </div>
+              <select
+                value={appStatusFilter}
+                onChange={e => { setAppStatusFilter(e.target.value); setAppPage(1); }}
+                className="input-field lg:w-56"
+              >
+                <option value="">All stages</option>
+                {ALL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <div className="flex items-center gap-2 text-xs text-slate-500 lg:ml-auto">
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 font-medium">
+                  {appTotal} total · {applicants.length} on this page
+                </span>
+              </div>
+            </div>
             {selectedIds.length > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">{selectedIds.length} selected</span>
-                <span className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
-                  Open candidates in the guided workflow to move them through the hiring journey.
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+                <span className="font-semibold text-amber-900">{selectedIds.length} selected</span>
+                <span className="text-xs text-amber-800">
+                  Open a candidate to move them through the guided workflow — bulk transitions are blocked to keep the audit trail clean.
                 </span>
               </div>
             )}
           </div>
-          <div className="card overflow-visible">
+
+          {/* Queue table — full width, generous row spacing, action column right-aligned */}
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             {appLoading ? (
-              <div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div></div>
+              <div className="flex items-center justify-center py-16">
+                <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-indigo-600" />
+              </div>
             ) : applicants.length === 0 ? (
-              <p className="text-center py-12 text-gray-400 text-sm">No applicants found</p>
+              <div className="py-16 text-center">
+                <p className="text-sm font-medium text-slate-700">No candidates match your filters yet.</p>
+                <p className="mt-1 text-xs text-slate-500">Try clearing the search or adding candidates from the buttons above.</p>
+              </div>
             ) : (
-              <div className="table-container">
-                <table className="w-full">
+              <div className="table-container w-full">
+                <table className="w-full text-sm">
                   <thead>
-                    <tr className="table-header">
-                      <th className="px-3 py-3 w-10"><input type="checkbox" checked={selectedIds.length === applicants.length && applicants.length > 0} onChange={toggleSelectAll} className="rounded" /></th>
-                      <th className="px-3 py-3 cursor-pointer" onClick={() => handleSort('candidate_name')}>Name {appSortBy === 'candidate_name' && (appSortOrder === 'asc' ? '↑' : '↓')}</th>
-                      <th className="px-3 py-3">Email</th>
-                      <th className="px-3 py-3">Phone</th>
-                      <th className="px-3 py-3 cursor-pointer" onClick={() => handleSort('status')}>Status {appSortBy === 'status' && (appSortOrder === 'asc' ? '↑' : '↓')}</th>
-                      <th className="px-3 py-3">Source</th>
-                      <th className="px-3 py-3 cursor-pointer" onClick={() => handleSort('created_at')}>Applied {appSortBy === 'created_at' && (appSortOrder === 'asc' ? '↑' : '↓')}</th>
-                      <th className="px-3 py-3">Recruiter</th>
-                      <th className="px-3 py-3">Actions</th>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.06em] text-slate-500">
+                      <th className="w-10 px-4 py-3">
+                        <input type="checkbox" checked={selectedIds.length === applicants.length && applicants.length > 0} onChange={toggleSelectAll} className="rounded" />
+                      </th>
+                      <th className="px-4 py-3 cursor-pointer hover:text-slate-900" onClick={() => handleSort('candidate_name')}>Candidate {appSortBy === 'candidate_name' && (appSortOrder === 'asc' ? '↑' : '↓')}</th>
+                      <th className="px-4 py-3 cursor-pointer hover:text-slate-900" onClick={() => handleSort('status')}>Stage {appSortBy === 'status' && (appSortOrder === 'asc' ? '↑' : '↓')}</th>
+                      <th className="px-4 py-3">Source</th>
+                      <th className="px-4 py-3 cursor-pointer hover:text-slate-900" onClick={() => handleSort('created_at')}>Applied {appSortBy === 'created_at' && (appSortOrder === 'asc' ? '↑' : '↓')}</th>
+                      <th className="px-4 py-3">Recruiter</th>
+                      <th className="px-4 py-3 text-right">Next action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {applicants.map(app => (
-                      <tr key={app.id} className="table-row">
-                        <td className="px-3 py-3"><input type="checkbox" checked={selectedIds.includes(app.id)} onChange={() => toggleSelect(app.id)} className="rounded" /></td>
-                        <td className="px-3 py-3 font-medium text-sm text-gray-900">{app.candidate_name}</td>
-                        <td className="px-3 py-3 text-sm text-gray-600">{app.candidate_email}</td>
-                        <td className="px-3 py-3 text-sm text-gray-600">{app.candidate_phone || '-'}</td>
-                        <td className="px-3 py-3">
-                          <div className="space-y-1">
-                            <span className={`badge ${STATUS_COLORS[app.status] || 'bg-gray-100 text-gray-700'}`}>{app.status}</span>
-                            {app.rejection_reason && (
-                              <p className="text-xs text-red-600">{app.rejection_reason}</p>
-                            )}
-                          </div>
+                      <tr key={app.id} className="border-b border-slate-100 last:border-b-0 transition hover:bg-indigo-50/40">
+                        <td className="px-4 py-4 align-top">
+                          <input type="checkbox" checked={selectedIds.includes(app.id)} onChange={() => toggleSelect(app.id)} className="rounded" />
                         </td>
-                        <td className="px-3 py-3 text-sm text-gray-600">{app.source || '-'}</td>
-                        <td className="px-3 py-3 text-sm text-gray-500">{new Date(app.created_at).toLocaleDateString()}</td>
-                        <td className="px-3 py-3 text-sm text-gray-600">{app.recruiter_email || '-'}</td>
-                        <td className="px-3 py-3 relative overflow-visible">
-                          <div className="space-y-2">
-                            {renderQueueActions(app)}
-                            <button onClick={() => navigate(`/jobs/${id}/candidates/${app.id}/edit`)} className="text-xs text-gray-600 hover:text-gray-800">Edit Candidate</button>
+                        <td className="px-4 py-4 align-top">
+                          <button onClick={() => openCandidateDetail(app.id)} className="block text-left">
+                            <p className="font-semibold text-slate-900 hover:text-indigo-700">{app.candidate_name}</p>
+                            <p className="text-xs text-slate-500">{app.candidate_email}</p>
+                            {app.candidate_phone && <p className="text-xs text-slate-400">{app.candidate_phone}</p>}
+                          </button>
+                        </td>
+                        <td className="px-4 py-4 align-top">
+                          <span className={`badge ${STATUS_COLORS[app.status] || 'bg-gray-100 text-gray-700'}`}>{app.status}</span>
+                          {app.rejection_reason && (
+                            <p className="mt-1 max-w-[240px] text-xs text-red-600">{app.rejection_reason}</p>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 align-top text-slate-600">{app.source || '—'}</td>
+                        <td className="px-4 py-4 align-top text-slate-500">{new Date(app.created_at).toLocaleDateString()}</td>
+                        <td className="px-4 py-4 align-top text-slate-600">{app.recruiter_email || '—'}</td>
+                        <td className="relative overflow-visible px-4 py-4 align-top">
+                          <div className="flex flex-col items-end gap-2">
+                            <div className="w-full max-w-[260px]">{renderQueueActions(app)}</div>
+                            <button
+                              onClick={() => navigate(`/jobs/${id}/candidates/${app.id}/edit`)}
+                              className="text-xs text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+                            >
+                              Edit candidate
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -817,106 +854,176 @@ export default function JobDetail() {
               </div>
             )}
           </div>
+
           {appTotalPages > 1 && (
-            <div className="flex items-center justify-between mt-4">
-              <p className="text-sm text-gray-500">Showing {(appPage - 1) * 20 + 1}-{Math.min(appPage * 20, appTotal)} of {appTotal}</p>
-              <div className="flex gap-2">
-                <button onClick={() => setAppPage(p => Math.max(1, p - 1))} disabled={appPage === 1} className="btn-secondary text-sm py-1 disabled:opacity-50">Previous</button>
-                <span className="text-sm text-gray-500 py-1">Page {appPage} / {appTotalPages}</span>
-                <button onClick={() => setAppPage(p => Math.min(appTotalPages, p + 1))} disabled={appPage === appTotalPages} className="btn-secondary text-sm py-1 disabled:opacity-50">Next</button>
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-2.5">
+              <p className="text-xs text-slate-500">Showing <span className="font-semibold text-slate-700">{(appPage - 1) * 20 + 1}–{Math.min(appPage * 20, appTotal)}</span> of {appTotal}</p>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setAppPage(p => Math.max(1, p - 1))} disabled={appPage === 1} className="btn-secondary text-xs py-1 disabled:opacity-40">← Previous</button>
+                <span className="text-xs text-slate-500">Page {appPage} / {appTotalPages}</span>
+                <button onClick={() => setAppPage(p => Math.min(appTotalPages, p + 1))} disabled={appPage === appTotalPages} className="btn-secondary text-xs py-1 disabled:opacity-40">Next →</button>
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Stage View Tab (Kanban) */}
+      {/* ─── Pipeline View (Kanban) ──────────────────────────────────── */}
       {activeTab === 'stages' && (
-        <div className="grid gap-4 pb-4 md:grid-cols-2 2xl:grid-cols-3">
-          {WORKFLOW_LANES.map((lane, idx) => {
-            const stageApps = applicants.filter(a => lane.statuses.includes(a.status));
-            const count = stageApps.length;
-            return (
-              <div key={lane.key} className="min-w-0">
-                <div className={`rounded-t-lg px-3 py-2 ${STAGE_COLORS[idx % STAGE_COLORS.length]} bg-opacity-20`}>
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-gray-800">{lane.label}</h3>
-                    <span className="text-xs font-bold text-gray-600 bg-white bg-opacity-60 rounded-full px-2 py-0.5">{count}</span>
-                  </div>
-                  <p className="mt-1 text-xs text-gray-600">{lane.description}</p>
-                </div>
-                <div className="bg-gray-50 rounded-b-lg min-h-[200px] p-2 space-y-2 border border-gray-200 border-t-0">
-                  {stageApps.length === 0 ? (
-                    <p className="text-xs text-gray-400 text-center py-8">No candidates</p>
-                  ) : (
-                    stageApps.map(app => (
-                      <div key={app.id} className="bg-white rounded-lg p-3 shadow-sm border border-gray-100 hover:shadow-md transition-shadow cursor-pointer" onClick={() => openCandidateDetail(app.id)}>
-                        <p className="text-sm font-medium text-gray-900 break-words">{app.candidate_name}</p>
-                        <p className="text-xs text-gray-500 break-all">{app.candidate_email}</p>
-                        <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_COLORS[app.status] || 'bg-gray-100 text-gray-700'}`}>
-                          {app.status}
-                        </span>
-                        {app.rejection_reason && (
-                          <p className="mt-1 text-xs text-red-600 whitespace-normal break-words">{app.rejection_reason}</p>
-                        )}
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-xs text-gray-400">{app.source || '-'}</span>
-                          <span className="text-xs text-gray-400">{new Date(app.created_at).toLocaleDateString()}</span>
-                        </div>
-                        <div className="mt-3 flex items-center justify-between gap-2">
-                          <div className="flex-1 min-w-0">{renderQueueActions(app)}</div>
-                          <button
-                            onClick={e => { e.stopPropagation(); openCandidateDetail(app.id); }}
-                            className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
-                          >
-                            Open Workflow
-                          </button>
-                        </div>
+        <div className="w-full space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Pipeline view</p>
+              <p className="text-xs text-slate-500">Candidates grouped by hiring stage. Click a card to open the guided workflow.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              {WORKFLOW_LANES.map((lane, idx) => {
+                const c = applicants.filter(a => lane.statuses.includes(a.status)).length;
+                return (
+                  <span key={lane.key} className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2.5 py-1">
+                    <span className={`h-2 w-2 rounded-full ${STAGE_COLORS[idx % STAGE_COLORS.length]}`} />
+                    {lane.label}: <span className="font-semibold text-slate-800">{c}</span>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid gap-4 pb-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+            {WORKFLOW_LANES.map((lane, idx) => {
+              const stageApps = applicants.filter(a => lane.statuses.includes(a.status));
+              const count = stageApps.length;
+              const accent = STAGE_COLORS[idx % STAGE_COLORS.length];
+              return (
+                <div key={lane.key} className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex items-start justify-between gap-2 border-b border-slate-100 px-3 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2.5 w-2.5 rounded-full ${accent}`} />
+                        <h3 className="truncate text-sm font-semibold text-slate-900">{lane.label}</h3>
                       </div>
-                    ))
-                  )}
+                      <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-slate-500">{lane.description}</p>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">{count}</span>
+                  </div>
+                  <div className="flex-1 space-y-2 bg-slate-50/60 p-2">
+                    {stageApps.length === 0 ? (
+                      <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-slate-200 text-[11px] text-slate-400">
+                        No candidates here
+                      </div>
+                    ) : (
+                      stageApps.map(app => (
+                        <button
+                          key={app.id}
+                          onClick={() => openCandidateDetail(app.id)}
+                          className="group block w-full rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md"
+                        >
+                          <p className="text-sm font-semibold text-slate-900 break-words group-hover:text-indigo-700">{app.candidate_name}</p>
+                          <p className="text-xs text-slate-500 break-all">{app.candidate_email}</p>
+                          <div className="mt-2 flex items-center justify-between gap-2">
+                            <span className={`badge text-[10px] ${STATUS_COLORS[app.status] || 'bg-gray-100 text-gray-700'}`}>{app.status}</span>
+                            <span className="text-[10px] text-slate-400">{new Date(app.created_at).toLocaleDateString()}</span>
+                          </div>
+                          {app.rejection_reason && (
+                            <p className="mt-1 break-words text-[11px] text-red-600">{app.rejection_reason}</p>
+                          )}
+                          <div className="mt-3 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
+                            <div className="mb-2">{renderQueueActions(app)}</div>
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 group-hover:text-indigo-800">
+                              Open guided workflow →
+                            </span>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {/* Settings Tab */}
+      {/* ─── Job Settings ────────────────────────────────────────────── */}
       {activeTab === 'settings' && (
-        <div className="card max-w-2xl">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Job Settings</h3>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Designation</label><p className="text-sm text-gray-900">{job.job_title || '-'}</p></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Department</label><p className="text-sm text-gray-900">{job.department_name || '-'}</p></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Location</label><p className="text-sm text-gray-900">{job.location_name || '-'}</p></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Business Unit</label><p className="text-sm text-gray-900">{job.bu_name || '-'}</p></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Grade</label><p className="text-sm text-gray-900">{job.grade || '-'}</p></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Job Type</label><p className="text-sm text-gray-900">{job.job_type || '-'}</p></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Sub Department</label><p className="text-sm text-gray-900">{job.sub_department_name || '-'}</p></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Phase</label><p className="text-sm text-gray-900">{job.phase_name || '-'}</p></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Recruiter</label><p className="text-sm text-gray-900">{job.recruiter_email || '-'}</p></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Secondary Recruiter</label><p className="text-sm text-gray-900">{job.secondary_recruiter_email || '-'}</p></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Total Positions</label><p className="text-sm text-gray-900">{job.total_positions || 0}</p></div>
-            </div>
-            <hr className="border-gray-200" />
+        <div className="w-full space-y-6">
+          {/* Header strip with primary CTA always visible */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 via-white to-white px-5 py-4 shadow-sm">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Job Description</label>
-              <div className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3 max-h-48 overflow-y-auto">{job.job_description || 'No description'}</div>
+              <p className="text-sm font-semibold text-slate-900">Job settings</p>
+              <p className="text-xs text-slate-500">All metadata, compensation, and visibility controls for this requisition.</p>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Min Compensation</label><p className="text-sm text-gray-900">{job.compensation_min != null ? `${job.compensation_currency || 'INR'} ${job.compensation_min}` : '-'}</p></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Max Compensation</label><p className="text-sm text-gray-900">{job.compensation_max != null ? `${job.compensation_currency || 'INR'} ${job.compensation_max}` : '-'}</p></div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Visibility</label><p className="text-sm text-gray-900">{job.publish_to_careers ? 'Public careers page' : 'Internal only'}</p></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Positions Remaining</label><p className="text-sm text-gray-900">{positionsRemaining}</p></div>
-            </div>
-            <div className="pt-2">
-              <button onClick={() => navigate(`/jobs/${id}/edit`)} className="btn-primary">Edit Job Details</button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={() => navigate(`/jobs/${id}/edit`)} className="btn-primary">✎ Edit job details</button>
+              <button onClick={handleShareLink} className="btn-secondary">Copy public link</button>
             </div>
           </div>
+
+          {/* Identity & Org — full width 4-col grid */}
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+              <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-700">Identity & organisation</h3>
+            </div>
+            <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {[
+                ['Designation', job.job_title],
+                ['Department', job.department_name],
+                ['Sub Department', job.sub_department_name],
+                ['Business Unit', job.bu_name],
+                ['Location', job.location_name],
+                ['Phase', job.phase_name],
+                ['Grade', job.grade],
+                ['Job Type', job.job_type],
+                ['Recruiter', job.recruiter_email],
+                ['Secondary Recruiter', job.secondary_recruiter_email],
+                ['Total Positions', job.total_positions || 0],
+                ['Positions Remaining', positionsRemaining],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</p>
+                  <p className="mt-1 text-sm text-slate-900 break-words">{value || <span className="text-slate-400">—</span>}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Compensation & visibility — 2-col */}
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-700">Compensation & posting</h3>
+            </div>
+            <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Min compensation</p>
+                <p className="mt-1 text-sm text-slate-900">{job.compensation_min != null ? `${job.compensation_currency || 'INR'} ${Number(job.compensation_min).toLocaleString()}` : <span className="text-slate-400">—</span>}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Max compensation</p>
+                <p className="mt-1 text-sm text-slate-900">{job.compensation_max != null ? `${job.compensation_currency || 'INR'} ${Number(job.compensation_max).toLocaleString()}` : <span className="text-slate-400">—</span>}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Visibility</p>
+                <p className="mt-1 text-sm text-slate-900">{job.publish_to_careers ? 'Public careers page' : 'Internal only'}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Status</p>
+                <p className="mt-1"><span className={`badge ${job.status === 'open' ? 'bg-emerald-100 text-emerald-700' : job.status === 'closed' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}>{job.status}</span></p>
+              </div>
+            </div>
+          </section>
+
+          {/* Description — full width readable column */}
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-700">Job description</h3>
+            </div>
+            <div className="whitespace-pre-wrap rounded-lg border border-slate-100 bg-slate-50/70 p-4 text-sm leading-7 text-slate-700">
+              {job.job_description || <span className="text-slate-400">No description provided. Click "Edit job details" to add one.</span>}
+            </div>
+          </section>
         </div>
       )}
 

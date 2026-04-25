@@ -34,10 +34,13 @@ router.put('/read-all', async (req, res) => {
 
 router.put('/:id/read', async (req, res) => {
   try {
-    await pool.query(
+    const result = await pool.query(
       'UPDATE notifications SET read_flag = true WHERE id = $1 AND LOWER(user_email) = $2',
       [req.params.id, String(req.user?.email || '').trim().toLowerCase()]
     );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Notification not found or not owned by you' });
+    }
     res.json({ message: 'Marked as read' });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });

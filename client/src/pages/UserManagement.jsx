@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { usersAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import DataTable from '../components/DataTable';
@@ -14,8 +14,6 @@ const ROLES = [
 
 export default function UserManagement() {
   const [users, setUsers] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [loading, setLoading] = useState(true);
@@ -28,15 +26,16 @@ export default function UserManagement() {
   const loadUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await usersAPI.list({ page, limit: 20, search, role: roleFilter || undefined });
-      setUsers(res.data.users);
-      setTotal(res.data.total);
+      // Pull a large page so the active/inactive split is meaningful without
+      // forcing the user to paginate twice.
+      const res = await usersAPI.list({ page: 1, limit: 500, search, role: roleFilter || undefined });
+      setUsers(res.data.users || []);
     } catch (err) {
       toast.error('Failed to load users');
     } finally {
       setLoading(false);
     }
-  }, [page, search, roleFilter]);
+  }, [search, roleFilter]);
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
 
@@ -62,14 +61,24 @@ export default function UserManagement() {
     }
   };
 
-  const handleDelete = async () => {
+  const handleDeactivate = async () => {
     try {
       await usersAPI.delete(deleteModal.id);
       toast.success('User deactivated');
       setDeleteModal(null);
       loadUsers();
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to delete');
+      toast.error(err.response?.data?.error || 'Failed to deactivate');
+    }
+  };
+
+  const handleReactivate = async (user) => {
+    try {
+      await usersAPI.update(user.id, { is_active: true });
+      toast.success(`${user.email} reactivated`);
+      loadUsers();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to reactivate');
     }
   };
 
@@ -87,13 +96,56 @@ export default function UserManagement() {
 
   const getRoleInfo = (role) => ROLES.find(r => r.value === role) || { label: role, tone: 'neutral' };
 
+  const [activeUsers, inactiveUsers] = useMemo(() => {
+    const active = [];
+    const inactive = [];
+    users.forEach((u) => {
+      if (u.is_active === false) inactive.push(u);
+      else active.push(u);
+    });
+    return [active, inactive];
+  }, [users]);
+
+  const baseColumns = [
+    { key: 'name', label: 'Name', render: (row) => <span style={{ fontWeight: 500, color: 'var(--text-main)' }}>{row.name || '-'}</span> },
+    { key: 'email', label: 'Email' },
+    { key: 'role', label: 'Role', render: (row) => <StatusPill tone={getRoleInfo(row.role).tone}>{getRoleInfo(row.role).label}</StatusPill> },
+    { key: 'created_at', label: 'Created', render: (row) => <span style={{ color: 'var(--text-faint)' }}>{row.created_at ? new Date(row.created_at).toLocaleDateString() : '-'}</span> },
+  ];
+
+  const activeColumns = [
+    ...baseColumns,
+    { key: 'actions', label: 'Actions', sortable: false, filterable: false, render: (row) => (
+      <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+        <button onClick={() => openEdit(row)} className="table-link">Edit</button>
+        {!row.is_default && (
+          <button onClick={() => setDeleteModal(row)} className="table-link" style={{ color: 'var(--danger-text)' }}>Deactivate</button>
+        )}
+      </div>
+    )},
+  ];
+
+  const inactiveColumns = [
+    ...baseColumns,
+    { key: 'updated_at', label: 'Deactivated', render: (row) => <span style={{ color: 'var(--text-faint)' }}>{row.updated_at ? new Date(row.updated_at).toLocaleDateString() : '-'}</span> },
+    { key: 'actions', label: 'Actions', sortable: false, filterable: false, render: (row) => (
+      <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+        <button onClick={() => handleReactivate(row)} className="table-link" style={{ color: 'var(--success-text, #047857)' }}>Reactivate</button>
+        <button onClick={() => openEdit(row)} className="table-link">Edit</button>
+      </div>
+    )},
+  ];
+
   return (
-    <div className="page-container">
+    <div className="page-container space-y-8">
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'User Management' }]}
         title="User Management"
         subtitle="Invite colleagues, assign roles, and govern access to the ATS."
-        meta={[{ label: `${total} users` }]}
+        meta={[
+          { label: `${activeUsers.length} active`, tone: 'success' },
+          { label: `${inactiveUsers.length} inactive` },
+        ]}
         actions={<button onClick={openCreate} className="btn-primary">+ Add User</button>}
       />
 
@@ -101,12 +153,12 @@ export default function UserManagement() {
         <input
           type="text"
           value={search}
-          onChange={e => { setSearch(e.target.value); setPage(1); }}
+          onChange={e => setSearch(e.target.value)}
           placeholder="Search by name or email…"
           className="input-field"
           style={{ maxWidth: 280, height: 36 }}
         />
-        <select value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setPage(1); }} className="input-field" style={{ maxWidth: 200, height: 36 }}>
+        <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="input-field" style={{ maxWidth: 200, height: 36 }}>
           <option value="">All roles</option>
           {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
@@ -117,27 +169,24 @@ export default function UserManagement() {
           <div className="animate-spin rounded-full h-6 w-6" style={{ borderBottom: '2px solid var(--accent-blue)' }} />
         </div>
       ) : (
-        <DataTable
-          title="Users"
-          data={users}
-          exportFileName="users"
-          emptyMessage="No users found"
-          columns={[
-            { key: 'name', label: 'Name', render: (row) => <span style={{ fontWeight: 500, color: 'var(--text-main)' }}>{row.name || '-'}</span> },
-            { key: 'email', label: 'Email' },
-            { key: 'role', label: 'Role', render: (row) => <StatusPill tone={getRoleInfo(row.role).tone}>{getRoleInfo(row.role).label}</StatusPill> },
-            { key: 'is_active', label: 'Status', render: (row) => <StatusPill tone={row.is_active ? 'success' : 'danger'}>{row.is_active ? 'Active' : 'Inactive'}</StatusPill> },
-            { key: 'created_at', label: 'Created', render: (row) => <span style={{ color: 'var(--text-faint)' }}>{new Date(row.created_at).toLocaleDateString()}</span> },
-            { key: 'actions', label: 'Actions', sortable: false, filterable: false, render: (row) => (
-              <div className="flex gap-2">
-                <button onClick={() => openEdit(row)} className="table-link">Edit</button>
-                {!row.is_default && (
-                  <button onClick={() => setDeleteModal(row)} className="table-link" style={{ color: 'var(--danger-text)' }}>Delete</button>
-                )}
-              </div>
-            )},
-          ]}
-        />
+        <div className="space-y-6">
+          <DataTable
+            title="Active Users"
+            subtitle="Currently allowed to sign in and use the ATS."
+            data={activeUsers}
+            columns={activeColumns}
+            emptyMessage="No active users"
+            exportFileName="users-active"
+          />
+          <DataTable
+            title="Inactive Users"
+            subtitle="Retained for audit history. Reactivate to restore sign-in access."
+            data={inactiveUsers}
+            columns={inactiveColumns}
+            emptyMessage="No inactive users"
+            exportFileName="users-inactive"
+          />
+        </div>
       )}
 
       {/* Create/Edit Modal */}
@@ -177,7 +226,7 @@ export default function UserManagement() {
         </div>
       )}
 
-      {/* Delete Confirmation */}
+      {/* Deactivate Confirmation */}
       {deleteModal && (
         <div className="app-modal-backdrop">
           <div className="app-modal-panel app-modal-panel-wide">
@@ -186,9 +235,9 @@ export default function UserManagement() {
               <svg className="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Deactivate User</h3>
-            <p className="text-sm text-gray-500 mb-4">Are you sure you want to deactivate <strong>{deleteModal.email}</strong>?</p>
+            <p className="text-sm text-gray-500 mb-4">Are you sure you want to deactivate <strong>{deleteModal.email}</strong>? They will lose ATS access and move to the inactive list. You can reactivate them anytime.</p>
             <div className="flex gap-3">
-              <button onClick={handleDelete} className="btn-danger flex-1">Deactivate</button>
+              <button onClick={handleDeactivate} className="btn-danger flex-1">Deactivate</button>
               <button onClick={() => setDeleteModal(null)} className="btn-secondary flex-1">Cancel</button>
             </div>
           </div>

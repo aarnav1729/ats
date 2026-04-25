@@ -1400,6 +1400,9 @@ router.put('/:id', allowedRoles, async (req, res) => {
     } else if (status === 'approved') {
       // Preserve historic approval steps for already-approved requisitions.
     } else {
+      // Wipe before replace so re-submitting a pending requisition can never
+      // accumulate stale/duplicate approval steps.
+      await client.query('DELETE FROM requisition_approvals WHERE requisition_id = $1', [req.params.id]);
       await replaceApprovalSteps(client, {
         requisitionId: req.params.id,
         requiresCxo,

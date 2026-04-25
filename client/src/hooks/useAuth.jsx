@@ -34,6 +34,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
+    // Best-effort server audit; never block the local sign-out on this.
+    authAPI.logout?.().catch(() => {});
     localStorage.removeItem('ats_token');
     localStorage.removeItem('ats_user');
     setUser(null);

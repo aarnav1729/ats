@@ -27,6 +27,7 @@ export const authAPI = {
   login: (email) => api.post('/auth/login', { email }),
   verifyOTP: (email, otp) => api.post('/auth/verify-otp', { email, otp }),
   me: () => api.get('/auth/me'),
+  logout: () => api.post('/auth/logout'),
 };
 
 // Users

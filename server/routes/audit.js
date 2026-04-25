@@ -123,7 +123,10 @@ router.get('/', adminOnly, async (req, res) => {
     }
     if (field_edited) {
       params.push(`%${field_edited}%`);
-      whereClause += ` AND (after_state::text ILIKE $${params.length} OR before_state::text ILIKE $${params.length})`;
+      const afterIdx = params.length;
+      params.push(`%${field_edited}%`);
+      const beforeIdx = params.length;
+      whereClause += ` AND (after_state::text ILIKE $${afterIdx} OR before_state::text ILIKE $${beforeIdx})`;
     }
 
     const allowedSort = ['created_at', 'action_by', 'action_type', 'entity_type'];
@@ -197,7 +200,10 @@ router.get('/export', adminOnly, async (req, res) => {
     }
     if (field_edited) {
       params.push(`%${field_edited}%`);
-      whereClause += ` AND (after_state::text ILIKE $${params.length} OR before_state::text ILIKE $${params.length})`;
+      const afterIdx = params.length;
+      params.push(`%${field_edited}%`);
+      const beforeIdx = params.length;
+      whereClause += ` AND (after_state::text ILIKE $${afterIdx} OR before_state::text ILIKE $${beforeIdx})`;
     }
 
     const result = await pool.query(

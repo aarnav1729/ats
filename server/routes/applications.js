@@ -710,6 +710,24 @@ async function transitionApplicationStatus(client, applicationId, nextStatus, ac
   const isRejectedStatus = ['HRRejected', 'HODRejected', 'Round1Rejected', 'Round2Rejected', 'Round3Rejected'].includes(nextStatus);
   const rejectionReason = options.rejectionReason || options.rejection_reason || null;
   const actorRole = options.actorRole || 'hr_recruiter';
+
+  // Block forward transitions on candidates whose parent job is closed/archived.
+  // Terminal/withdraw states are still allowed so HR can clean up.
+  const TERMINAL_NEXT = ['Withdrawn', 'HRRejected', 'HODRejected', 'OfferDropout', 'OfferRejected', 'Round1Rejected', 'Round2Rejected', 'Round3Rejected'];
+  if (current.ats_job_id && !TERMINAL_NEXT.includes(nextStatus)) {
+    const jobRow = await client.query(
+      `SELECT status, active_flag FROM jobs WHERE job_id = $1 LIMIT 1`,
+      [current.ats_job_id]
+    );
+    if (jobRow.rows.length) {
+      const jobStatus = String(jobRow.rows[0].status || '').toLowerCase();
+      const jobActive = jobRow.rows[0].active_flag !== false;
+      if (!jobActive || ['closed', 'archived', 'cancelled', 'filled'].includes(jobStatus)) {
+        throw new Error('Parent job is closed or archived; only withdrawal/rejection is allowed');
+      }
+    }
+  }
+
   if (['hr_admin', 'hr_recruiter'].includes(actorRole)) {
     assertHrManagedTransition(current.status, nextStatus, { rejectionReason });
   }
