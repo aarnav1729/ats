@@ -88,8 +88,12 @@ app.use("/api/ctc-chain", authMiddleware, ctcChainRoutes);
 app.use("/api/ctc-breakup", authMiddleware, ctcBreakupRoutes);
 
 // Serve brand assets used by the email templates and the public job page.
-app.get("/pel.png", (_req, res) => res.sendFile(path.resolve(__dirname, "../pel.png")));
-app.get("/l.png", (_req, res) => res.sendFile(path.resolve(__dirname, "../l.png")));
+app.get("/pel.png", (_req, res) =>
+  res.sendFile(path.resolve(__dirname, "../pel.png"))
+);
+app.get("/l.png", (_req, res) =>
+  res.sendFile(path.resolve(__dirname, "../l.png"))
+);
 
 // Boot the reminder runner (offer expiry, interview T-24h / T-30m, joining day).
 remindersService.start();
@@ -118,22 +122,72 @@ app.get("*", (req, res, next) => {
   return res.sendFile(clientIndexPath);
 });
 
+function getSpawnEnv() {
+  const env = {};
+
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === "string") {
+      env[key] = value;
+    }
+  }
+
+  env.NODE_ENV = env.NODE_ENV || "production";
+  return env;
+}
+
 function buildClient() {
-  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+  if (!fs.existsSync(clientDir)) {
+    return Promise.reject(
+      new Error(`Client directory not found: ${clientDir}`)
+    );
+  }
+
+  if (!fs.existsSync(path.join(clientDir, "package.json"))) {
+    return Promise.reject(
+      new Error(`client/package.json not found in: ${clientDir}`)
+    );
+  }
+
+  const isWindows = process.platform === "win32";
+  const command = isWindows ? process.env.ComSpec || "cmd.exe" : "npm";
+  const args = isWindows
+    ? ["/d", "/s", "/c", "npm run build"]
+    : ["run", "build"];
+
+  console.log(`Running client build in: ${clientDir}`);
+  console.log(
+    `Command: ${
+      isWindows
+        ? `${command} /d /s /c "npm run build"`
+        : "npm run build"
+    }`
+  );
 
   return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(npmCommand, ["run", "build"], {
+    const child = spawn(command, args, {
       cwd: clientDir,
       stdio: "inherit",
-      env: process.env,
+      env: getSpawnEnv(),
+      windowsHide: false,
+      shell: false,
     });
 
-    child.on("error", rejectPromise);
+    child.on("error", (err) => {
+      rejectPromise(
+        new Error(
+          `Failed to start client build process: ${err.message}\n` +
+            `cwd=${clientDir}\n` +
+            `command=${command} ${args.join(" ")}`
+        )
+      );
+    });
+
     child.on("close", (code) => {
       if (code === 0) {
         resolvePromise();
         return;
       }
+
       rejectPromise(new Error(`Client build failed with exit code ${code}`));
     });
   });
@@ -141,18 +195,73 @@ function buildClient() {
 
 // ==================== OLLAMA MANAGEMENT ====================
 
+function getOllamaPath() {
+  const isWindows = process.platform === "win32";
+
+  if (isWindows) {
+    const possiblePaths = [
+      path.join(
+        process.env.LOCALAPPDATA || "",
+        "Programs",
+        "Ollama",
+        "ollama.exe"
+      ),
+      "C:\\Users\\Administrator\\AppData\\Local\\Programs\\Ollama\\ollama.exe",
+      "C:\\Program Files\\Ollama\\ollama.exe",
+    ];
+
+    for (const candidate of possiblePaths) {
+      try {
+        if (candidate && fs.existsSync(candidate)) {
+          return candidate;
+        }
+      } catch {
+        // ignore and continue
+      }
+    }
+
+    try {
+      execSync("ollama --version", { stdio: "ignore" });
+      return "ollama";
+    } catch {
+      return null;
+    }
+  }
+
+  const unixCandidates = [
+    "ollama",
+    "/usr/local/bin/ollama",
+    "/opt/homebrew/bin/ollama",
+    "/usr/bin/ollama",
+  ];
+
+  for (const candidate of unixCandidates) {
+    if (candidate.includes("/")) {
+      try {
+        if (fs.existsSync(candidate)) {
+          return candidate;
+        }
+      } catch {
+        // ignore and continue
+      }
+    } else {
+      try {
+        execSync(`${candidate} --version`, { stdio: "ignore" });
+        return candidate;
+      } catch {
+        // ignore and continue
+      }
+    }
+  }
+
+  return null;
+}
+
 /**
  * Checks if Ollama is installed on the system
  */
 function isOllamaInstalled() {
-  try {
-    const command =
-      process.platform === "win32" ? "where ollama" : "which ollama";
-    execSync(command, { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
+  return Boolean(getOllamaPath());
 }
 
 /**
@@ -173,8 +282,11 @@ async function isOllamaRunning() {
 async function isModelPulled() {
   try {
     const res = await fetch(`${OLLAMA_BASE_URL}/api/tags`);
+    if (!res.ok) return false;
+
     const data = await res.json();
     const models = data.models || [];
+
     return models.some(
       (m) => m.name === OLLAMA_MODEL || m.name.startsWith(OLLAMA_MODEL)
     );
@@ -204,13 +316,12 @@ async function installOllama() {
     console.log("   Or download from: https://ollama.com/download/mac");
     process.exit(1);
   } else {
-    // Linux - attempt automatic installation
     console.log("🐧 Linux detected. Attempting automatic installation...");
     try {
       console.log("   Running: curl -fsSL https://ollama.com/install.sh | sh");
       execSync("curl -fsSL https://ollama.com/install.sh | sh", {
         stdio: "inherit",
-        timeout: 300000, // 5 minutes
+        timeout: 300000,
       });
       console.log("✅ Ollama installed successfully");
       return true;
@@ -231,12 +342,18 @@ function startOllamaService() {
   return new Promise((resolve, reject) => {
     console.log("🚀 Starting Ollama service...");
 
-    const isWindows = process.platform === "win32";
-    const command = isWindows ? "ollama.exe" : "ollama";
+    const command = getOllamaPath();
+
+    if (!command) {
+      reject(new Error("Ollama executable not found"));
+      return;
+    }
 
     const ollamaProcess = spawn(command, ["serve"], {
       detached: true,
-      stdio: "ignore", // Change to 'inherit' to see Ollama logs
+      stdio: "ignore",
+      windowsHide: true,
+      shell: false,
     });
 
     ollamaProcess.on("error", (err) => {
@@ -250,10 +367,7 @@ function startOllamaService() {
       }
     });
 
-    // Detach so it runs independently
     ollamaProcess.unref();
-
-    // Give it time to start
     setTimeout(resolve, 3000);
   });
 }
@@ -267,11 +381,17 @@ async function pullModel() {
   );
 
   return new Promise((resolve, reject) => {
-    const isWindows = process.platform === "win32";
-    const command = isWindows ? "ollama.exe" : "ollama";
+    const command = getOllamaPath();
+
+    if (!command) {
+      reject(new Error("Ollama executable not found"));
+      return;
+    }
 
     const pullProcess = spawn(command, ["pull", OLLAMA_MODEL], {
-      stdio: "inherit", // Show progress
+      stdio: "inherit",
+      windowsHide: false,
+      shell: false,
     });
 
     pullProcess.on("error", (err) => {
@@ -296,34 +416,40 @@ async function pullModel() {
 async function setupOllama() {
   console.log("\n🦙 ========== SETTING UP OLLAMA AI SERVICE ==========");
 
-  // 1. Check if Ollama is installed
   if (!isOllamaInstalled()) {
     await installOllama();
   } else {
     console.log("✅ Ollama is installed");
+    console.log(`📍 Ollama executable: ${getOllamaPath()}`);
   }
 
-  // 2. Check if Ollama is running
   const running = await isOllamaRunning();
   if (!running) {
     console.log("🔄 Ollama is not running. Starting service...");
     await startOllamaService();
 
-    // Wait for service to be ready
     let attempts = 0;
+    let serviceReady = false;
+
     while (attempts < 10) {
       if (await isOllamaRunning()) {
         console.log("✅ Ollama service is now running");
+        serviceReady = true;
         break;
       }
       await new Promise((r) => setTimeout(r, 1000));
       attempts++;
     }
+
+    if (!serviceReady) {
+      throw new Error(
+        `Ollama executable was found, but the Ollama service did not become ready at ${OLLAMA_BASE_URL} after starting it.`
+      );
+    }
   } else {
     console.log("✅ Ollama service is already running");
   }
 
-  // 3. Check if model is pulled
   const modelExists = await isModelPulled();
   if (!modelExists) {
     console.log(`📦 Model ${OLLAMA_MODEL} not found locally`);
@@ -361,7 +487,9 @@ async function start() {
         await setupOllama();
       } catch (err) {
         console.warn(`⚠️  Ollama setup skipped: ${err.message}`);
-        console.warn("   (AI parsing + assistant will degrade to fallback. Set SKIP_OLLAMA=1 to silence.)");
+        console.warn(
+          "   (AI parsing + assistant will degrade to fallback. Set SKIP_OLLAMA=1 to silence.)"
+        );
       }
     }
 
@@ -376,17 +504,27 @@ async function start() {
       ca: path.join(certDir, "gd_bundle-g2-g1.crt"),
     };
     const certsAvailable = Object.values(certFiles).every((p) => {
-      try { return fs.existsSync(p); } catch { return false; }
+      try {
+        return fs.existsSync(p);
+      } catch {
+        return false;
+      }
     });
     const useHttp = process.env.USE_HTTP === "1" || !certsAvailable;
 
     const onListen = (proto) => () => {
       const banner = "═══════════════════════════════════════════════════";
       console.log(banner);
-      console.log(`🚀 ${proto.toUpperCase()} server running → ${proto}://localhost:${PORT}`);
-      console.log(`🗄️  PostgreSQL → ${PG_CONFIG.host}:${PG_CONFIG.port}/${PG_CONFIG.database}`);
+      console.log(
+        `🚀 ${proto.toUpperCase()} server running → ${proto}://localhost:${PORT}`
+      );
+      console.log(
+        `🗄️  PostgreSQL → ${PG_CONFIG.host}:${PG_CONFIG.port}/${PG_CONFIG.database}`
+      );
       console.log(`🦙 Ollama AI → ${OLLAMA_BASE_URL} (Model: ${OLLAMA_MODEL})`);
-      console.log(`💻 Platform → ${process.platform} ${process.arch} · Node ${process.version}`);
+      console.log(
+        `💻 Platform → ${process.platform} ${process.arch} · Node ${process.version}`
+      );
       console.log(banner);
     };
 
@@ -413,7 +551,6 @@ async function start() {
 // Handle graceful shutdown
 process.on("SIGINT", () => {
   console.log("\n👋 Shutting down gracefully...");
-  // Note: Ollama continues running in background (detached)
   process.exit(0);
 });
 
