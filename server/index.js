@@ -287,11 +287,31 @@ async function isModelPulled() {
     const data = await res.json();
     const models = data.models || [];
 
-    return models.some(
-      (m) => m.name === OLLAMA_MODEL || m.name.startsWith(OLLAMA_MODEL)
-    );
+    if (models.some((m) => m.name === OLLAMA_MODEL || m.name.startsWith(OLLAMA_MODEL))) {
+      return true;
+    }
+
+    if (models.length > 0) {
+      console.log(`⚠️  Configured model '${OLLAMA_MODEL}' not found. Available models:`);
+      models.forEach((m) => console.log(`   - ${m.name}`));
+      return false;
+    }
+
+    return false;
   } catch {
     return false;
+  }
+}
+
+async function getFirstAvailableModel() {
+  try {
+    const res = await fetch(`${OLLAMA_BASE_URL}/api/tags`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const models = data.models || [];
+    return models.length > 0 ? models[0].name : null;
+  } catch {
+    return null;
   }
 }
 
@@ -450,12 +470,26 @@ async function setupOllama() {
     console.log("✅ Ollama service is already running");
   }
 
+  let activeModel = OLLAMA_MODEL;
   const modelExists = await isModelPulled();
+
   if (!modelExists) {
-    console.log(`📦 Model ${OLLAMA_MODEL} not found locally`);
-    await pullModel();
+    const fallbackModel = await getFirstAvailableModel();
+    if (fallbackModel) {
+      console.log(`📦 Model ${OLLAMA_MODEL} not found. Auto-detected '${fallbackModel}' — using it.`);
+      activeModel = fallbackModel;
+    } else {
+      console.log(`📦 Model ${OLLAMA_MODEL} not found locally, and no other models available.`);
+      console.log(`   Please pull a model: ollama pull ${OLLAMA_MODEL}`);
+      console.log(`   Or set OLLAMA_MODEL env var to an available model.`);
+      throw new Error(`Model ${OLLAMA_MODEL} not available and no fallback found`);
+    }
   } else {
-    console.log(`✅ Model ${OLLAMA_MODEL} is available`);
+    console.log(`✅ Model ${activeModel} is available`);
+  }
+
+  if (activeModel !== OLLAMA_MODEL) {
+    process.env.OLLAMA_MODEL = activeModel;
   }
 
   console.log("🦙 ========== OLLAMA AI SERVICE READY ==========\n");

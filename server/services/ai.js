@@ -66,11 +66,12 @@ let lastOllamaError = null;
 
 async function queryOllama(prompt, options = {}) {
   try {
+    const model = process.env.OLLAMA_MODEL || OLLAMA_MODEL;
     const res = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: OLLAMA_MODEL,
+        model,
         prompt,
         stream: false,
         options: { temperature: 0.2, num_predict: 2000, ...options },
@@ -834,7 +835,7 @@ export async function getAiServiceStatus() {
   return {
     provider: 'ollama',
     base_url: OLLAMA_BASE_URL,
-    model: OLLAMA_MODEL,
+    model: process.env.OLLAMA_MODEL || OLLAMA_MODEL,
     available,
     fallback_active: !available,
     last_error: available ? null : lastOllamaError || 'Ollama is unreachable from the server process.',
