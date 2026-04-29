@@ -158,7 +158,7 @@ export default function CTCPasteTable({ value, onChange, readOnly = false, place
         </button>
 
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-faint)' }}>
-          Paste from Excel or type — whitespace, tabs, and line breaks preserved.
+          Paste from Excel or type - whitespace, tabs, and line breaks preserved.
         </span>
       </div>
 
@@ -212,7 +212,7 @@ export default function CTCPasteTable({ value, onChange, readOnly = false, place
               {text}
             </pre>
           ) : (
-            <p style={{ margin: 0, color: 'var(--text-faint)', fontSize: 13 }}>Nothing to preview — switch to Edit and paste or type.</p>
+            <p style={{ margin: 0, color: 'var(--text-faint)', fontSize: 13 }}>Nothing to preview - switch to Edit and paste or type.</p>
           )}
         </div>
       )}

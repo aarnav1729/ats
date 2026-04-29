@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import AppModal from '../components/AppModal';
 import EmailComposerModal from '../components/EmailComposerModal';
 import Timeline from '../components/Timeline';
+import TriageMenu from '../components/TriageMenu';
 import { formatDateTime, toDatetimeLocalValue } from '../utils/dateTime';
 import {
   getCurrentRoundTask,
@@ -368,9 +369,19 @@ export default function JobDetail() {
 
   const handleStatusChange = async (newStatus) => {
     try {
-      await jobsAPI.update(id, { status: newStatus });
+      // Hold requires a reason - emails go out via the on-hold template once
+      // the server side picks up the change (see jobOnHoldEmail in txEmails.js).
+      let hold_reason = null;
+      if (newStatus === 'on_hold') {
+        hold_reason = window.prompt('Why is this job being put on hold? (visible to recruiter + admin)');
+        if (!hold_reason || !hold_reason.trim()) {
+          toast.error('A reason is required to hold this job.');
+          return;
+        }
+      }
+      await jobsAPI.update(id, { status: newStatus, hold_reason: hold_reason || undefined });
       setJob(prev => ({ ...prev, status: newStatus }));
-      toast.success(`Job status updated to ${newStatus}`);
+      toast.success(newStatus === 'on_hold' ? 'Job placed on hold' : `Job status updated to ${newStatus}`);
     } catch { toast.error('Failed to update status'); }
   };
 
@@ -750,7 +761,7 @@ export default function JobDetail() {
       {/* ─── Workflow Queue Tab ──────────────────────────────────────── */}
       {activeTab === 'applicants' && (
         <div className="w-full space-y-4">
-          {/* Sticky toolbar — search left, filters middle, primary CTA right */}
+          {/* Sticky toolbar - search left, filters middle, primary CTA right */}
           <div className="sticky top-0 z-10 -mx-1 rounded-xl border border-slate-200 bg-white/95 px-3 py-3 shadow-sm backdrop-blur">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
               <div className="relative flex-1 min-w-0">
@@ -781,13 +792,13 @@ export default function JobDetail() {
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
                 <span className="font-semibold text-amber-900">{selectedIds.length} selected</span>
                 <span className="text-xs text-amber-800">
-                  Open a candidate to move them through the guided workflow — bulk transitions are blocked to keep the audit trail clean.
+                  Open a candidate to move them through the guided workflow - bulk transitions are blocked to keep the audit trail clean.
                 </span>
               </div>
             )}
           </div>
 
-          {/* Queue table — full width, generous row spacing, action column right-aligned */}
+          {/* Queue table - full width, generous row spacing, action column right-aligned */}
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             {appLoading ? (
               <div className="flex items-center justify-center py-16">
@@ -838,6 +849,9 @@ export default function JobDetail() {
                         <td className="px-4 py-4 align-top text-slate-600">{app.recruiter_email || '—'}</td>
                         <td className="relative overflow-visible px-4 py-4 align-top">
                           <div className="flex flex-col items-end gap-2">
+                            <div className="flex items-center gap-2">
+                              <TriageMenu application={app} compact onChanged={loadApplicants} />
+                            </div>
                             <div className="w-full max-w-[260px]">{renderQueueActions(app)}</div>
                             <button
                               onClick={() => navigate(`/jobs/${id}/candidates/${app.id}/edit`)}
@@ -959,7 +973,7 @@ export default function JobDetail() {
             </div>
           </div>
 
-          {/* Identity & Org — full width 4-col grid */}
+          {/* Identity & Org - full width 4-col grid */}
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center gap-2">
               <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
@@ -968,6 +982,7 @@ export default function JobDetail() {
             <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {[
                 ['Designation', job.job_title],
+                ['HR One Job ID', job.hr_one_job_id],
                 ['Department', job.department_name],
                 ['Sub Department', job.sub_department_name],
                 ['Business Unit', job.bu_name],
@@ -988,7 +1003,7 @@ export default function JobDetail() {
             </div>
           </section>
 
-          {/* Compensation & visibility — 2-col */}
+          {/* Compensation & visibility - 2-col */}
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center gap-2">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -1014,7 +1029,7 @@ export default function JobDetail() {
             </div>
           </section>
 
-          {/* Description — full width readable column */}
+          {/* Description - full width readable column */}
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center gap-2">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { applicationsAPI, candidatesAPI, interviewsAPI, jobsAPI, mastersAPI, orgAPI, candidatePortalAPI } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
@@ -264,6 +264,52 @@ export default function ApplicationWorkflow() {
     ban_role: '',
     ban_reason: '',
   });
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') === 'schedule' ? 'schedule' : 'workflow');
+  const [scheduleForm, setScheduleForm] = useState({ datetime: '', note: '', meeting_link: '' });
+  const [scheduleSubmitting, setScheduleSubmitting] = useState(false);
+
+  const handleScheduleSlot = async (slotDatetime) => {
+    if (!slotDatetime) return;
+    const roundNum = getCurrentRoundTask(application)?.round_number || 1;
+    setScheduleSubmitting(true);
+    try {
+      await applicationsAPI.moveStage(id, {
+        stage: `Round${roundNum}`,
+        scheduled_datetime: new Date(slotDatetime).toISOString(),
+        meeting_link: scheduleForm.meeting_link || null,
+        note: scheduleForm.note || null,
+      });
+      toast.success('Interview scheduled successfully');
+      setScheduleForm({ datetime: '', note: '', meeting_link: '' });
+      refresh();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to schedule');
+    } finally {
+      setScheduleSubmitting(false);
+    }
+  };
+
+  const handleQuickSchedule = async () => {
+    if (!scheduleForm.datetime) return;
+    const roundNum = getCurrentRoundTask(application)?.round_number || 1;
+    setScheduleSubmitting(true);
+    try {
+      await applicationsAPI.moveStage(id, {
+        stage: `Round${roundNum}`,
+        scheduled_datetime: new Date(scheduleForm.datetime).toISOString(),
+        meeting_link: scheduleForm.meeting_link || null,
+        note: scheduleForm.note || null,
+      });
+      toast.success('Interview scheduled');
+      setScheduleForm({ datetime: '', note: '', meeting_link: '' });
+      refresh();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to schedule');
+    } finally {
+      setScheduleSubmitting(false);
+    }
+  };
 
   const activeInterviewTask = useMemo(() => getCurrentRoundTask(application), [application]);
   const requestedRoundExtension = useMemo(() => {
@@ -342,7 +388,7 @@ export default function ApplicationWorkflow() {
         const detail = err?.response?.data?.error || err?.message || 'Unknown error';
         console.error('Candidate workflow load error:', err);
         toast.error(`Failed to load candidate workflow: ${detail}`);
-        // Don't force-navigate — let the user see the error and try again.
+        // Don't force-navigate - let the user see the error and try again.
       } finally {
         setLoading(false);
       }
@@ -739,6 +785,31 @@ export default function ApplicationWorkflow() {
         </div>
       </div>
 
+      <div className="mb-6 flex gap-1 border-b border-gray-200">
+        <button
+          onClick={() => setActiveTab('workflow')}
+          className={`px-4 py-2.5 text-sm font-medium transition-colors ${
+            activeTab === 'workflow'
+              ? 'border-b-2 border-blue-600 text-blue-600'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Workflow
+        </button>
+        <button
+          onClick={() => setActiveTab('schedule')}
+          className={`px-4 py-2.5 text-sm font-medium transition-colors ${
+            activeTab === 'schedule'
+              ? 'border-b-2 border-blue-600 text-blue-600'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Schedule & Interview
+        </button>
+      </div>
+
+      {activeTab === 'workflow' && (
+      <>
       <WorkflowHero application={application} nextOwner={nextOwner} primaryAction={primaryAction} />
       <StageRail status={application.status} />
 
@@ -1127,12 +1198,12 @@ export default function ApplicationWorkflow() {
                 <div className="mt-5">
                   <div className="flex items-center gap-2 mb-3">
                     <h3 className="text-sm font-semibold text-gray-900">CTC Comparison Table</h3>
-                    <InfoTip text="Paste the CTC comparison table directly from your Excel sheet — rows and columns are preserved exactly as pasted." />
+                    <InfoTip text="Paste the CTC comparison table directly from your Excel sheet - rows and columns are preserved exactly as pasted." />
                   </div>
                   <CTCPasteTable
                     value={ctcTable}
                     onChange={setCtcTable}
-                    placeholder="Paste the full CTC comparison table from your Excel template — headers, values, all preserved."
+                    placeholder="Paste the full CTC comparison table from your Excel template - headers, values, all preserved."
                   />
 
                   <div className="mt-5 rounded-2xl border border-gray-200 bg-gray-50 p-4">
@@ -1758,13 +1829,223 @@ export default function ApplicationWorkflow() {
         </aside>
       </div>
 
+      {['AwaitingInterviewScheduling', 'Round1', 'Round2', 'Round3'].includes(application.status) && (
+        <section className="workspace-card panel-hover mt-6 border-l-4 border-blue-500">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <h2 className="section-title">Interview Scheduling</h2>
+              <InfoTip text="Confirm a suggested slot or schedule manually" />
+            </div>
+            {hasRole(['hr_admin', 'hr_recruiter']) && (
+              <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                Recruiter Action Required
+              </span>
+            )}
+          </div>
+          
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {application.suggested_interview_datetime1 && (
+              <button
+                onClick={() => handleScheduleSlot(application.suggested_interview_datetime1)}
+                className="rounded-xl border-2 border-blue-200 bg-blue-50/50 p-4 text-left hover:border-blue-400 hover:bg-blue-100 transition-all"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="rounded-full bg-blue-600 text-white text-xs px-2 py-0.5">Slot 1</span>
+                </div>
+                <p className="font-semibold text-gray-900">{formatDateTime(application.suggested_interview_datetime1)}</p>
+                <p className="text-sm text-gray-500 mt-1">Click to confirm</p>
+              </button>
+            )}
+            {application.suggested_interview_datetime2 && (
+              <button
+                onClick={() => handleScheduleSlot(application.suggested_interview_datetime2)}
+                className="rounded-xl border-2 border-blue-200 bg-blue-50/50 p-4 text-left hover:border-blue-400 hover:bg-blue-100 transition-all"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="rounded-full bg-blue-600 text-white text-xs px-2 py-0.5">Slot 2</span>
+                </div>
+                <p className="font-semibold text-gray-900">{formatDateTime(application.suggested_interview_datetime2)}</p>
+                <p className="text-sm text-gray-500 mt-1">Click to confirm</p>
+              </button>
+            )}
+            <div className="rounded-xl border-2 border-dashed border-gray-200 p-4 space-y-3">
+              <p className="text-sm font-medium text-gray-700">Schedule custom slot</p>
+              <input
+                type="datetime-local"
+                onChange={(e) => setScheduleForm(prev => ({ ...prev, datetime: e.target.value }))}
+                className="input-field w-full text-sm"
+              />
+              <input
+                type="url"
+                placeholder="Meeting link (Zoom/Teams/Google Meet)"
+                value={scheduleForm.meeting_link}
+                onChange={(e) => setScheduleForm(prev => ({ ...prev, meeting_link: e.target.value }))}
+                className="input-field w-full text-sm"
+              />
+              <button
+                onClick={handleQuickSchedule}
+                disabled={!scheduleForm.datetime || scheduleSubmitting}
+                className="w-full btn-primary text-sm"
+              >
+                {scheduleSubmitting ? 'Scheduling...' : 'Confirm Schedule'}
+              </button>
+            </div>
+          </div>
+
+          {application.scheduled_datetime && (
+            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-xl">
+              <p className="text-sm font-medium text-green-800">
+                Currently scheduled: {formatDateTime(application.scheduled_datetime)}
+              </p>
+              {application.meeting_link && (
+                <a 
+                  href={application.meeting_link} 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="mt-2 inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                >
+                  🔗 Join Meeting
+                </a>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
       <section className="workspace-card panel-hover mt-6">
         <div className="flex items-center gap-2 mb-4">
           <h2 className="section-title">Candidate Timeline & TAT</h2>
-          <InfoTip text="Complete history of events for this application — status changes, document actions, clearance moves, interview events. TAT per step computed here." />
+          <InfoTip text="Complete history of events for this application - status changes, document actions, clearance moves, interview events. TAT per step computed here." />
         </div>
         <Timeline entityType="application" entityId={application.id} />
       </section>
+      </>
+      )}
+      {activeTab === 'schedule' && (
+        <div className="space-y-6">
+          <section className="workspace-card panel-hover">
+            <div className="flex items-center justify-between gap-3 mb-6">
+              <div>
+                <h2 className="section-title">Interview Schedule</h2>
+                <p className="mt-1 text-sm text-gray-500">Manage interview scheduling, slots, and outcomes</p>
+              </div>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-gray-900">Suggested Slots</h3>
+                {application.suggested_interview_datetime1 || application.suggested_interview_datetime2 ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {application.suggested_interview_datetime1 && (
+                      <button
+                        onClick={() => handleScheduleSlot(application.suggested_interview_datetime1)}
+                        disabled={scheduleSubmitting}
+                        className="rounded-xl border-2 border-blue-200 bg-blue-50 p-4 text-left hover:border-blue-400 hover:bg-blue-100 transition-all disabled:opacity-50"
+                      >
+                        <span className="text-xs font-medium text-blue-600">Slot 1</span>
+                        <p className="mt-1 font-semibold text-gray-900">{formatDateTime(application.suggested_interview_datetime1)}</p>
+                      </button>
+                    )}
+                    {application.suggested_interview_datetime2 && (
+                      <button
+                        onClick={() => handleScheduleSlot(application.suggested_interview_datetime2)}
+                        disabled={scheduleSubmitting}
+                        className="rounded-xl border-2 border-blue-200 bg-blue-50 p-4 text-left hover:border-blue-400 hover:bg-blue-100 transition-all disabled:opacity-50"
+                      >
+                        <span className="text-xs font-medium text-blue-600">Slot 2</span>
+                        <p className="mt-1 font-semibold text-gray-900">{formatDateTime(application.suggested_interview_datetime2)}</p>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-500">
+                    No slots suggested yet. Interviewers will suggest slots after reviewing the candidate.
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-gray-900">Current Schedule</h3>
+                {application.scheduled_datetime ? (
+                  <div className="rounded-xl border-2 border-green-200 bg-green-50 p-4">
+                    <p className="font-semibold text-green-800">{formatDateTime(application.scheduled_datetime)}</p>
+                    <p className="mt-1 text-sm text-green-700">
+                      Round {getCurrentRoundTask(application)?.round_number || '—'}
+                    </p>
+                    {application.meeting_link && (
+                      <a 
+                        href={application.meeting_link} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="mt-2 inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                      >
+                        🔗 Join Meeting
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border-2 border-dashed border-gray-200 p-4 space-y-3">
+                    <p className="text-sm text-gray-500">No interview scheduled yet</p>
+                    <input
+                      type="datetime-local"
+                      value={scheduleForm.datetime}
+                      onChange={(e) => setScheduleForm(prev => ({ ...prev, datetime: e.target.value }))}
+                      className="input-field w-full"
+                    />
+                    <input
+                      type="url"
+                      placeholder="Meeting link (Zoom/Teams/Google Meet)"
+                      value={scheduleForm.meeting_link}
+                      onChange={(e) => setScheduleForm(prev => ({ ...prev, meeting_link: e.target.value }))}
+                      className="input-field w-full"
+                    />
+                    <button
+                      onClick={handleQuickSchedule}
+                      disabled={!scheduleForm.datetime || scheduleSubmitting}
+                      className="btn-primary w-full"
+                    >
+                      {scheduleSubmitting ? 'Scheduling...' : 'Schedule Interview'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="workspace-card panel-hover">
+            <h3 className="section-title mb-4">Interview Panel</h3>
+            {application.interview_feedback?.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {application.interview_feedback.map((task, idx) => (
+                  <div key={task.id || idx} className="rounded-xl border border-gray-200 p-4">
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium text-gray-900">{task.interviewer_email}</p>
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        task.status === 'completed' ? 'bg-green-100 text-green-700' :
+                        task.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {task.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-gray-500">Round {task.round_number}</p>
+                    {task.scheduled_datetime && (
+                      <p className="mt-2 text-sm text-gray-600">{formatDateTime(task.scheduled_datetime)}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No interviewers assigned yet</p>
+            )}
+          </section>
+
+          <section className="workspace-card panel-hover">
+            <h3 className="section-title mb-4">Interview History</h3>
+            <Timeline entityType="application" entityId={application.id} filterEventTypes={['interview.*', 'feedback.*']} />
+          </section>
+        </div>
+      )}
     </div>
   );
 }

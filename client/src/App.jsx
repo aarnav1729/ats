@@ -21,6 +21,8 @@ import InterviewWorkspace from './pages/InterviewWorkspace';
 import InterviewSchedule from './pages/InterviewSchedule';
 import CandidatePage from './pages/CandidatePage';
 import AuditTrail from './pages/AuditTrail';
+import AuditDeck from './pages/AuditDeck';
+import TatExplorer from './pages/TatExplorer';
 import MIS from './pages/MIS';
 import ApplicationWorkflow from './pages/ApplicationWorkflow';
 import AnalyticsCopilot from './pages/AnalyticsCopilot';
@@ -77,12 +79,13 @@ export default function App() {
           <Route path="jobs/:jobId/candidates/:id/edit" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter']}><AddCandidate /></ProtectedRoute>} />
           <Route path="jobs/:jobId/bulk-upload" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter']}><BulkUpload /></ProtectedRoute>} />
           <Route path="applications/:id/workflow" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter', 'interviewer', 'hod']}><ApplicationWorkflow /></ProtectedRoute>} />
-          <Route path="applications/:id/schedule" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter', 'interviewer', 'hod']}><InterviewSchedule /></ProtectedRoute>} />
           <Route path="interviews" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter', 'interviewer', 'hod']}><InterviewerPage /></ProtectedRoute>} />
           <Route path="interviews/:id/workspace" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter', 'interviewer', 'hod']}><InterviewWorkspace /></ProtectedRoute>} />
           <Route path="my-tasks" element={<ProtectedRoute roles={['hr_admin', 'applicant']}><CandidatePage /></ProtectedRoute>} />
           <Route path="notifications" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter', 'interviewer', 'applicant', 'hod']}><Notifications /></ProtectedRoute>} />
-          <Route path="audit" element={<ProtectedRoute roles={['hr_admin']}><AuditTrail /></ProtectedRoute>} />
+          <Route path="audit" element={<ProtectedRoute roles={['hr_admin']}><AuditDeck /></ProtectedRoute>} />
+          <Route path="audit/legacy" element={<ProtectedRoute roles={['hr_admin']}><AuditTrail /></ProtectedRoute>} />
+          <Route path="tat" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter', 'hod']}><TatExplorer /></ProtectedRoute>} />
           <Route path="mis" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter']}><MIS /></ProtectedRoute>} />
           <Route path="analytics-copilot" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter', 'hod']}><AnalyticsCopilot /></ProtectedRoute>} />
           <Route path="candidate" element={<ProtectedRoute roles={['applicant']}><CandidatePortal /></ProtectedRoute>} />

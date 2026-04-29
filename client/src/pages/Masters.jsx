@@ -262,20 +262,22 @@ export default function Masters() {
         }
       />
 
-      <Tabs
-        tabs={tabsConfig}
-        value={activeTab}
-        onChange={setActiveTab}
-        variant="underline"
-      />
+      <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+        <Tabs
+          tabs={tabsConfig}
+          value={activeTab}
+          onChange={setActiveTab}
+          variant="underline"
+        />
+      </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <input
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search…"
-          className="input-field"
+          className="input-field flex-1 min-w-[180px]"
           style={{ maxWidth: 280, height: 36 }}
         />
       </div>
@@ -293,6 +295,7 @@ export default function Masters() {
             columns={tableColumns}
             emptyMessage="No active records found"
             exportFileName={`masters-${activeTab}-active`}
+            collapsible
           />
 
           <DataTable
@@ -302,6 +305,7 @@ export default function Masters() {
             columns={tableColumns}
             emptyMessage="No inactive records found"
             exportFileName={`masters-${activeTab}-inactive`}
+            collapsible
           />
         </div>
       )}
@@ -309,11 +313,28 @@ export default function Masters() {
       {/* Modal */}
       {modalOpen && (
         <div className="app-modal-backdrop" onClick={() => { setModalOpen(false); setEditItem(null); }}>
-          <div className="app-modal-panel app-modal-panel-wide" onClick={e => e.stopPropagation()}>
-            <div className="app-modal-header">
+          <div 
+            className="app-modal-panel app-modal-panel-wide" 
+            onClick={e => e.stopPropagation()}
+            style={{ 
+              width: 'min(90vw, 480px)',
+              maxWidth: '100%',
+              margin: 'auto',
+            }}
+          >
+            <div className="app-modal-header flex items-center justify-between">
               <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-main)' }}>
                 {editItem ? 'Edit' : 'Create'} {currentType.label.replace(/s$/, '')}
               </h2>
+              <button 
+                type="button" 
+                onClick={() => { setModalOpen(false); setEditItem(null); }}
+                className="md:hidden p-1 -mr-2 text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
             <div className="app-modal-body overflow-y-auto" style={{ maxHeight: 'calc(90vh - 120px)' }}>
             <form onSubmit={handleSubmit} className="space-y-4">

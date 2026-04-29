@@ -1,5 +1,9 @@
 import { ConfidentialClientApplication } from '@azure/msal-node';
 import pool from '../db.js';
+import { renderBrandedEmail, paragraph, detailTable, quoteBlock, formatIST, esc } from './emailBrand.js';
+
+// Re-export brand helpers so any caller can import them via the email facade.
+export { renderBrandedEmail, paragraph, detailTable, quoteBlock, formatIST, esc };
 
 const GRAPH = {
   tenantId: process.env.GRAPH_TENANT_ID || '1c3de7f3-f8d1-41d3-8583-2517cf3ba3b1',
@@ -32,6 +36,30 @@ function normalizeLink(link) {
   return value;
 }
 
+// Convert HTML to readable plain text for in-app notifications. The bell-tray
+// shows the message as a single-line summary, so we collapse whitespace,
+// strip tags, decode the common entities, and trim to a sensible length.
+function htmlToPlain(input) {
+  if (!input) return null;
+  let s = String(input);
+  // Convert common block tags into newlines, then strip everything else.
+  s = s
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6])\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, '');
+  // Decode the entities we actually emit (esc() in emailBrand.js).
+  s = s
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&[a-z]+;/gi, ' ');
+  s = s.replace(/[ \t]+/g, ' ').replace(/\n\s*\n/g, '\n').trim();
+  return s.length > 600 ? s.slice(0, 597) + '…' : s;
+}
+
 async function createInAppNotification({ to, title, message = null, link = null }) {
   const email = String(to || '').trim().toLowerCase();
   if (!email || !title) return false;
@@ -39,7 +67,7 @@ async function createInAppNotification({ to, title, message = null, link = null 
     await pool.query(
       `INSERT INTO notifications (user_email, title, message, link)
        VALUES ($1, $2, $3, $4)`,
-      [email, title, message || null, normalizeLink(link)]
+      [email, htmlToPlain(title), htmlToPlain(message), normalizeLink(link)]
     );
     return true;
   } catch (err) {
@@ -48,8 +76,9 @@ async function createInAppNotification({ to, title, message = null, link = null 
   }
 }
 
-export async function sendEmail(to, subject, htmlBody, { cc = [] } = {}) {
+export async function sendEmail(to, subject, htmlBody, { cc = [], attachments } = {}) {
   try {
+    const { getLogoAttachment } = await import('./emailBrand.js');
     const token = await getToken();
     const toList = Array.isArray(to) ? to : [to];
     const ccList = Array.isArray(cc) ? cc : cc ? [cc] : [];
@@ -61,6 +90,13 @@ export async function sendEmail(to, subject, htmlBody, { cc = [] } = {}) {
     if (ccList.length) {
       message.ccRecipients = ccList.filter(Boolean).map((a) => ({ emailAddress: { address: a } }));
     }
+    // Always attach the inline logo so cid:pel-logo resolves. Append any
+    // caller-supplied attachments (e.g. resumes for blacklist alert).
+    const att = [];
+    const logo = getLogoAttachment();
+    if (logo) att.push(logo);
+    if (Array.isArray(attachments)) att.push(...attachments);
+    if (att.length) message.attachments = att;
     const res = await fetch(`https://graph.microsoft.com/v1.0/users/${GRAPH.senderEmail}/sendMail`, {
       method: 'POST',
       headers: {
@@ -99,38 +135,10 @@ export async function sendCustomEmail({ to, cc = [], subject, htmlBody, sentBy, 
   return result;
 }
 
+// Legacy wrapper retained for callers that already pass full HTML bodies.
+// New callers should use renderBrandedEmail() directly with a CTA spec.
 function wrapInTemplate(title, body) {
-  return `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:24px 12px;background:#eef3f8;font-family:'Segoe UI',Roboto,Arial,sans-serif">
-<div style="max-width:700px;margin:0 auto;background:#ffffff;border-radius:22px;overflow:hidden;box-shadow:0 18px 54px rgba(15,23,42,0.12);border:1px solid #dbe4ef">
-  <div style="background:linear-gradient(135deg,#0b1d36 0%,#123c74 52%,#0c8da3 100%);padding:28px 28px 24px;position:relative">
-    <div style="position:absolute;right:-26px;top:-14px;width:160px;height:160px;border-radius:999px;background:rgba(255,255,255,0.06)"></div>
-    <div style="position:absolute;left:-40px;bottom:-55px;width:180px;height:180px;border-radius:999px;background:rgba(255,255,255,0.05)"></div>
-    <table cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
-      <td><p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:0.28em;text-transform:uppercase;color:rgba(255,255,255,0.6)">Premier Energies</p>
-      <h1 style="color:#fff;margin:0;font-size:24px;line-height:1.2;font-weight:700">${title}</h1>
-      <p style="margin:8px 0 0;color:rgba(255,255,255,0.76);font-size:13px;line-height:1.6">Hiring operations updates for Premier Energies solar cell and module manufacturing teams.</p></td>
-      <td width="84" valign="top" align="right">
-        <div style="display:inline-block;min-width:64px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.14);text-align:center">
-          <p style="margin:0;font-size:10px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:#dbeafe">ATS</p>
-          <p style="margin:6px 0 0;font-size:12px;font-weight:700;color:#ffffff">SPOT</p>
-        </div>
-      </td>
-    </tr></table>
-  </div>
-  <div style="padding:24px 28px 22px">
-    ${body}
-  </div>
-  <div style="background:#f8fbff;padding:16px 28px;border-top:1px solid #e2e8f0">
-    <p style="margin:0;font-size:11px;color:#64748b;line-height:1.7">Automated notification from Premier Energies ATS.</p>
-    <p style="margin:6px 0 0;font-size:11px;color:#94a3b8;line-height:1.7">Open ATS: <a href="${process.env.APP_URL || ''}" style="color:#1d4ed8;text-decoration:none;font-weight:600">${process.env.APP_URL || 'ATS workspace link not configured'}</a></p>
-    <p style="margin:6px 0 0;font-size:11px;color:#cbd5e1">&copy; ${new Date().getFullYear()} Premier Energies Ltd.</p>
-  </div>
-</div>
-</body>
-</html>`;
+  return renderBrandedEmail({ title, bodyHtml: body });
 }
 
 export async function sendOTPEmail(to, otp) {

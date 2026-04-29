@@ -233,7 +233,7 @@ export default function AddCandidate() {
       return;
     }
     if (!form.source) {
-      toast.error('Source is required — select how this candidate was sourced');
+      toast.error('Source is required - select how this candidate was sourced');
       return;
     }
     if (form.candidate_phone) {
@@ -484,7 +484,7 @@ export default function AddCandidate() {
               <div>
                 <label className="block text-sm font-semibold text-gray-800 mb-2">Source <span className="text-red-500">*</span></label>
                 <select value={form.source} onChange={(event) => updateForm('source', event.target.value)} className={`input-field ${!form.source ? 'border-red-300 ring-1 ring-red-200' : ''}`} required>
-                  <option value="">Select source — required</option>
+                  <option value="">Select source - required</option>
                   {SOURCES.map((source) => <option key={source} value={source}>{source}</option>)}
                 </select>
                 {!form.source && <p className="mt-1 text-xs text-red-500">Sourcing channel is required</p>}

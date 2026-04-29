@@ -223,6 +223,7 @@ export default function Requisitions() {
           exportFileName="requisitions"
           emptyMessage="No requisitions found"
           onRowClick={(row) => navigate(`/requisitions/${row.id}`)}
+          collapsible
           columns={[
             { key: 'requisition_id', label: 'Req ID', render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--accent-blue)' }}>{row.requisition_id}</span> },
             { key: 'job_title', label: 'Job Title', render: (row) => (

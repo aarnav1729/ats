@@ -48,6 +48,7 @@ const EMPTY_FORM = {
   hiring_stages: [],
   interviewer_emails: { 1: [], 2: [], 3: [] },
   number_of_positions: '1',
+  hr_one_job_id: '',
 };
 
 function buildHiringFlow(roundCount) {
@@ -289,6 +290,7 @@ export default function CreateJob() {
             3: parseRoundAssignments(job.interviewer_emails, roundCount)[2],
           },
           number_of_positions: toInputString(job.total_positions || job.number_of_positions || 1),
+          hr_one_job_id: job.hr_one_job_id || '',
         });
         setShowSecondaryRecruiter(Boolean(job.secondary_recruiter_email));
       } catch {
@@ -721,6 +723,19 @@ export default function CreateJob() {
 
         <FormField label="Reapply Period (days)" hint="Days before a rejected candidate can reapply">
           <input type="text" inputMode="numeric" pattern="[0-9]*" value={form.reapply_days} onChange={(event) => updateForm('reapply_days', sanitizeWholeNumber(event.target.value))} className="input-field w-full" />
+        </FormField>
+      </div>
+
+      <div className="border-t border-gray-100 pt-5">
+        <h3 className="mb-4 text-sm font-semibold text-gray-700">External system mapping</h3>
+        <FormField label="HR One Job ID" hint="Optional. Paste the matching HR One reference so analytics + exports can join the two systems.">
+          <input
+            type="text"
+            value={form.hr_one_job_id || ''}
+            onChange={(event) => updateForm('hr_one_job_id', event.target.value)}
+            className="input-field w-full"
+            placeholder="e.g. HR1-2026-PEL-EE-128"
+          />
         </FormField>
       </div>
 

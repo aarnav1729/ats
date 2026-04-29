@@ -223,4 +223,68 @@ export const demoAPI = {
   story: () => api.get('/demo/story'),
 };
 
+// ── Phase 0+ APIs ──────────────────────────────────────────────────────
+export const tatAPI = {
+  pairs: (level) => api.get('/tat/pairs', { params: level ? { level } : {} }),
+  calculate: (params) => api.get('/tat/calculate', { params }),
+  grid: (params) => api.get('/tat/grid', { params }),
+};
+
+export const blacklistAPI = {
+  list: () => api.get('/blacklist'),
+  add: (application_id, reason) => api.post('/blacklist', { application_id, reason }),
+  lift: (phone) => api.delete(`/blacklist/${encodeURIComponent(phone)}`),
+  check: (phone) => api.post('/blacklist/check', { phone }),
+};
+
+export const triageAPI = {
+  moveToTalentPool: (id, reason) => api.post(`/triage/${id}/move-to-talent-pool`, { reason }),
+  moveToJob: (id, target_job_id) => api.post(`/triage/${id}/move-to-job`, { target_job_id }),
+  shortlist: (id, payload) => api.post(`/triage/${id}/shortlist`, payload),
+  hrReject: (id, reason) => api.post(`/triage/${id}/hr-reject`, { reason }),
+  jobsSearchable: (q) => api.get('/triage/jobs/searchable', { params: { q } }),
+};
+
+export const chatAPI = {
+  thread: (applicationId) => api.get(`/chat/${applicationId}/thread`),
+  send: (applicationId, formData) => api.post(`/chat/${applicationId}/send`, formData),
+  myThread: () => api.get('/chat/me/thread'),
+  mySend: (formData) => api.post('/chat/me/send', formData),
+};
+
+export const offersAPI = {
+  upload: (applicationId, formData) => api.post(`/offers/${applicationId}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  myCurrent: () => api.get('/offers/me/current'),
+  mySign: (payload) => api.post('/offers/me/sign', payload),
+  setJoining: (applicationId, payload) => api.post(`/offers/${applicationId}/joining`, payload),
+  joiningOutcome: (applicationId, payload) => api.post(`/offers/${applicationId}/joining-outcome`, payload),
+};
+
+export const ctcChainAPI = {
+  start: (applicationId, payload) => api.post(`/ctc-chain/${applicationId}/start`, payload),
+  chain: (applicationId) => api.get(`/ctc-chain/${applicationId}/chain`),
+  act: (applicationId, payload) => api.post(`/ctc-chain/${applicationId}/act`, payload),
+  myAccept: () => api.post('/ctc-chain/me/accept'),
+};
+
+export const ctcBreakupAPI = {
+  setBreakup: (applicationId, formData) => api.post(`/ctc-breakup/${applicationId}/breakup`, formData),
+  myBreakup: () => api.get('/ctc-breakup/me/breakup'),
+  myRespond: (id, payload) => api.post(`/ctc-breakup/me/breakup/${id}/respond`, payload),
+  setComparison: (applicationId, formData) => api.post(`/ctc-breakup/${applicationId}/comparison`, formData),
+  all: (applicationId) => api.get(`/ctc-breakup/${applicationId}/all`),
+};
+
+// Recruiter uploads docs on behalf of candidate
+export const docsAPI = {
+  hrUpload: (applicationId, docId, formData) =>
+    api.post(`/candidate-portal/applications/${applicationId}/documents/${docId}/upload-as-hr`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+};
+
+// Interview reset-slots + reschedule
+export const interviewActionsAPI = {
+  resetSlots: (id, reason) => api.put(`/interviews/${id}/reset-slots`, { reason }),
+  reschedule: (id, payload) => api.put(`/interviews/${id}/reschedule`, payload),
+};
+
 export default api;

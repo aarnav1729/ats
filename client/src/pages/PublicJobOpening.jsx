@@ -108,7 +108,7 @@ export default function PublicJobOpening() {
 
   const tone = completion >= 80 ? 'emerald' : completion >= 50 ? 'sky' : 'amber';
   const message = completion >= 80
-    ? 'Excellent — recruiters love complete profiles. Your application stands out.'
+    ? 'Excellent - recruiters love complete profiles. Your application stands out.'
     : completion >= 50
       ? 'Good start. A few more fields and you significantly improve your chances.'
       : 'The more details you share, the better we can match you to this role. Upload your resume to auto-fill.';
@@ -147,8 +147,8 @@ export default function PublicJobOpening() {
       setResumePath(res.data?.file?.path || '');
       setParseQuality(parsed.parse_quality || null);
       const q = parsed.parse_quality;
-      if (q === 'high') toast.success('Resume parsed — please review and confirm');
-      else if (q === 'medium') toast.success('Resume parsed — please fill any missing details');
+      if (q === 'high') toast.success('Resume parsed - please review and confirm');
+      else if (q === 'medium') toast.success('Resume parsed - please fill any missing details');
       else toast('Resume read, but some fields need manual input', { icon: '📝' });
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to parse resume. You can still apply manually.');
@@ -277,7 +277,7 @@ export default function PublicJobOpening() {
             {title || job.job_title || job.job_id}
           </h1>
           <p className="mt-3 max-w-4xl text-sm text-slate-600 md:text-base">
-            Build India's solar manufacturing future. Drop your resume below and we'll auto-fill the details for you — the more you share, the stronger your application.
+            Build India's solar manufacturing future. Drop your resume below and we'll auto-fill the details for you - the more you share, the stronger your application.
           </p>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-8">

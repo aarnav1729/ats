@@ -260,11 +260,50 @@ router.get('/stats', adminOnly, async (req, res) => {
       typeCounts[row.action_type] = Number(row.count || 0);
     }
 
+    // Login activity: per-user login counts in the same window + DAU on logins.
+    const [loginsByUser, dauLogins, dauActions, totalLogins, sessionsToday] = await Promise.all([
+      pool.query(
+        `SELECT action_by, COUNT(*) AS count, MAX(created_at) AS last_login
+           FROM audit_trail ${whereClause} AND action_type = 'login'
+          GROUP BY action_by ORDER BY count DESC LIMIT 50`,
+        params
+      ),
+      pool.query(
+        `SELECT DATE(created_at AT TIME ZONE 'Asia/Kolkata') AS day, COUNT(DISTINCT action_by) AS users
+           FROM audit_trail ${whereClause} AND action_type = 'login'
+          GROUP BY day ORDER BY day DESC LIMIT 14`,
+        params
+      ),
+      pool.query(
+        `SELECT DATE(created_at AT TIME ZONE 'Asia/Kolkata') AS day, COUNT(*) AS actions, COUNT(DISTINCT action_by) AS users
+           FROM audit_trail ${whereClause}
+          GROUP BY day ORDER BY day DESC LIMIT 14`,
+        params
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS c FROM audit_trail ${whereClause} AND action_type = 'login'`,
+        params
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS c FROM audit_trail
+          WHERE action_type = 'login' AND created_at >= NOW() - INTERVAL '24 hours'`
+      ),
+    ]);
+
     res.json({
       ...typeCounts,
+      total: byType.rows.reduce((s, r) => s + Number(r.count || 0), 0),
+      today: dauActions.rows[0] ? Number(dauActions.rows[0].actions || 0) : 0,
+      last_7_days: dauActions.rows.slice(0, 7).reduce((s, r) => s + Number(r.actions || 0), 0),
+      unique_actors: byUser.rows.length,
+      total_logins: Number(totalLogins.rows[0]?.c || 0),
+      logins_last_24h: Number(sessionsToday.rows[0]?.c || 0),
       actions_by_type: byType.rows,
       actions_by_user: byUser.rows,
       actions_by_entity: byEntity.rows,
+      logins_by_user: loginsByUser.rows,
+      dau_logins: dauLogins.rows,
+      dau_actions: dauActions.rows,
     });
   } catch (err) {
     console.error('Audit stats error:', err);

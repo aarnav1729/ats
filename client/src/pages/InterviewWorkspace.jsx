@@ -10,6 +10,65 @@ import { canMarkNoShow, formatDateTime, toDatetimeLocalValue } from '../utils/da
 
 const SCORE_OPTIONS = [1, 2, 3, 4, 5];
 
+// ── RBAC view selector ───────────────────────────────────────────────────
+// HR Admin sees a dropdown of Admin / Recruiter / Interviewer perspectives so
+// they can demo the lifecycle from any seat. Non-admins are locked to the
+// view that matches their actual role.
+const RBAC_LABELS = {
+  admin:       { label: 'Admin · all actions',     description: 'Full visibility + every action' },
+  recruiter:   { label: 'Recruiter · sourcing',    description: 'Schedule, confirm, reject pre-screen' },
+  interviewer: { label: 'Interviewer · panel',     description: 'Suggest slots, give feedback' },
+};
+
+function RbacViewSwitcher({ current, onChange, allowed }) {
+  if (allowed.length <= 1) {
+    const only = allowed[0];
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        {RBAC_LABELS[only].label}
+      </span>
+    );
+  }
+  return (
+    <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white pl-3 pr-1 py-1 shadow-sm">
+      <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">View as</span>
+      <select
+        value={current}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-transparent border-0 pr-2 py-1 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-0 cursor-pointer"
+      >
+        {allowed.map((v) => (
+          <option key={v} value={v}>{RBAC_LABELS[v].label}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+// Compact stat cell used in the redesigned hero strip.
+function FactTile({ label, value, sub, tone }) {
+  const toneRing = {
+    success: 'before:bg-emerald-500',
+    warn: 'before:bg-amber-500',
+    danger: 'before:bg-rose-500',
+    info: 'before:bg-indigo-500',
+  }[tone] || 'before:bg-slate-300';
+  return (
+    <div className={`relative px-5 py-4 transition hover:bg-slate-50 before:absolute before:left-0 before:top-3 before:bottom-3 before:w-[3px] before:rounded-r-full ${toneRing}`}>
+      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-slate-900 break-words leading-tight">{value || '—'}</p>
+      {sub && <p className="mt-0.5 text-[12px] text-slate-500 truncate">{sub}</p>}
+    </div>
+  );
+}
+
+const STATE_LABEL = {
+  slots:    { label: 'Slots needed',    stage: 'shortlisted', tone: 'warn' },
+  feedback: { label: 'Feedback ready',  stage: 'interview',   tone: 'success' },
+  waiting:  { label: 'Awaiting schedule', stage: 'queue',     tone: 'info' },
+};
+
 function isPreviewableFile(filePath = '') {
   return /\.(pdf|png|jpe?g|gif|webp)$/i.test(filePath);
 }
@@ -51,8 +110,12 @@ export default function InterviewWorkspace() {
   const [preScreenRejectReason, setPreScreenRejectReason] = useState('');
   const [preScreenRejectRemarks, setPreScreenRejectRemarks] = useState('');
 
-  const canCoordinate = hasRole('hr_admin') || hasRole('hr_recruiter');
-  const canReview = hasRole('interviewer') || hasRole('hod') || hasRole('hr_admin');
+  // RBAC view state - admin can switch perspective; others are locked.
+  const initialView = hasRole('hr_admin') ? 'admin' : hasRole('hr_recruiter') ? 'recruiter' : 'interviewer';
+  const [viewAs, setViewAs] = useState(initialView);
+
+  const canCoordinate = (viewAs === 'admin' || viewAs === 'recruiter');
+  const canReview = (viewAs === 'admin' || viewAs === 'interviewer');
   const needsSlotSuggestion = useMemo(
     () => ['AwaitingHODResponse', 'AwaitingInterviewScheduling'].includes(interview?.app_status) || interview?.status === 'review_pending',
     [interview?.app_status, interview?.status]
@@ -62,6 +125,7 @@ export default function InterviewWorkspace() {
     [interview?.app_status, interview?.scheduled_datetime]
   );
   const noShowEnabled = useMemo(() => canMarkNoShow(interview?.scheduled_datetime), [interview?.scheduled_datetime]);
+  const stateLabel = needsSlotSuggestion ? 'slots' : canGiveFeedback ? 'feedback' : 'waiting';
   const currentRoundNumber = useMemo(
     () => Number(interview?.round || interview?.round_number || 1),
     [interview?.round, interview?.round_number]
@@ -282,68 +346,76 @@ export default function InterviewWorkspace() {
 
   return (
     <div className="workspace-shell">
+      {/* Top bar: back + RBAC view selector + cross-links */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <button onClick={() => { haptic.light(); navigate(-1); }} className="btn-secondary">Back</button>
-        <div className="flex flex-wrap gap-2">
-          {canCoordinate && (
-            <button onClick={() => { haptic.light(); navigate(`/applications/${interview.application_record_id}/schedule`); }} className="btn-secondary">
-              Open Scheduling Workspace
+        <button onClick={() => { haptic.light(); navigate(-1); }} className="v2-btn-ghost">← Back</button>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* RBAC view selector - admin can switch between Recruiter / Interviewer / Admin perspectives.
+              For non-admin users the selector locks to their role so they never see anything they shouldn't. */}
+          <RbacViewSwitcher
+            current={viewAs}
+            onChange={setViewAs}
+            allowed={hasRole('hr_admin') ? ['admin', 'recruiter', 'interviewer'] : hasRole('hr_recruiter') ? ['recruiter'] : ['interviewer']}
+          />
+          {(viewAs === 'admin' || viewAs === 'recruiter') && (
+            <button onClick={() => { haptic.light(); navigate(`/applications/${interview.application_record_id}/workflow?tab=schedule`); }} className="v2-btn-ghost">
+              Scheduling
             </button>
           )}
-          <button onClick={() => { haptic.light(); navigate(`/applications/${interview.application_record_id}/workflow`); }} className="btn-primary">
-            Open Candidate Workflow
+          <button onClick={() => { haptic.light(); navigate(`/applications/${interview.application_record_id}/workflow`); }} className="v2-btn-primary">
+            Workflow →
           </button>
         </div>
       </div>
 
-      <div className="workspace-hero animate-fade-in-up">
-        <div className="grid gap-6 xl:grid-cols-[1.08fr,0.92fr] xl:items-start">
-          <div>
-            <div className="utility-strip">
-              <span className="utility-chip">Reviewer Desk</span>
-              <span className="utility-chip">Round {interview.round || interview.round_number || 1}</span>
-              <span className="utility-chip">{interview.status || 'review pending'}</span>
+      {/* COMPACT HERO ─────────────────────────────────────────────────────
+         Single horizontal strip. Left: identity + breadcrumb chips. Right:
+         four small fact tiles in one row on desktop, two columns on mobile.
+         Replaces the 50/50 hero that wasted vertical space and put the same
+         label twice. */}
+      <header className="rounded-2xl border border-slate-200 bg-white shadow-sm v2-fade-up">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="v2-pill" data-stage="interview">Round {interview.round || interview.round_number || 1}</span>
+              <span className="v2-pill">{(interview.status || 'review pending').replace(/_/g, ' ')}</span>
+              <span className="v2-pill" data-stage={STATE_LABEL[stateLabel].stage}>{STATE_LABEL[stateLabel].label}</span>
             </div>
-            <div className="mt-4 flex items-center gap-2">
-              <h1 className="page-title">Reviewer Workspace</h1>
-              <InfoTip text="This page is for pre-interview review, slot suggestion, no-show handling, and structured feedback. It replaces cramped row actions and small modal hopping." />
-            </div>
-            <p className="page-subtitle mt-3 max-w-3xl">
-              Review the candidate dossier, suggest workable slots, and close the round with structured feedback from one dense operating board.
+            <h1 className="mt-2 text-[22px] font-bold tracking-tight text-slate-900 leading-tight">
+              {interview.candidate_name}
+              <span className="ml-2 text-sm font-normal text-slate-500">· {interview.job_title || 'Reviewer Workspace'}</span>
+            </h1>
+            <p className="mt-1 text-sm text-slate-500 leading-snug max-w-3xl">
+              Review the dossier, suggest slots, and close the round - all from one dense board. Switch view above to demo other roles.
             </p>
           </div>
-          <div className="fact-grid">
-            <div className="fact-card">
-              <p className="workspace-kicker">Candidate</p>
-              <p className="mt-2 text-sm font-semibold text-gray-900">{interview.candidate_name}</p>
-              <p className="mt-1 text-sm text-gray-500">{interview.candidate_email}</p>
-            </div>
-            <div className="fact-card">
-              <p className="workspace-kicker">Round</p>
-              <p className="mt-2 text-sm font-semibold text-gray-900">Round {interview.round || interview.round_number}</p>
-              <p className="mt-1 text-sm text-gray-500">{interview.app_status || 'ATS stage not available'}</p>
-            </div>
-            <div className="fact-card">
-              <p className="workspace-kicker">Assigned To</p>
-              <p className="mt-2 text-sm font-semibold text-gray-900">{interview.interviewer_email}</p>
-              <p className="mt-1 text-sm text-gray-500">{formatDateTime(interview.scheduled_datetime)}</p>
-            </div>
-            <div className="fact-card">
-              <p className="workspace-kicker">Action State</p>
-              <p className="mt-2 text-sm font-semibold text-gray-900">{needsSlotSuggestion ? 'Slots needed' : canGiveFeedback ? 'Feedback ready' : 'Awaiting schedule'}</p>
-              <p className="mt-1 text-sm text-gray-500">{noShowEnabled ? 'No-show capture available' : 'No-show capture locked until interview time'}</p>
-            </div>
-          </div>
         </div>
-      </div>
+
+        {/* Compact fact strip - equal columns, never wraps to multiple rows on desktop */}
+        <dl className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-slate-100">
+          <FactTile label="Candidate"
+            value={interview.candidate_email}
+            sub={interview.candidate_phone || '—'} />
+          <FactTile label="Round"
+            value={`Round ${interview.round || interview.round_number || 1} of ${interview.no_of_rounds || '?'}`}
+            sub={interview.app_status || '—'} />
+          <FactTile label="Assigned to"
+            value={interview.interviewer_email}
+            sub={formatDateTime(interview.scheduled_datetime) || 'Not yet scheduled'} />
+          <FactTile label="Action state"
+            value={STATE_LABEL[stateLabel].label}
+            sub={noShowEnabled ? 'No-show capture available' : 'No-show locked until interview time'}
+            tone={STATE_LABEL[stateLabel].tone} />
+        </dl>
+      </header>
 
       <div className="workboard-layout">
         <aside className="workboard-lane workboard-lane-primary">
           <div className="workspace-card panel-hover">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="section-title">Candidate Dossier</h2>
-                <p className="mt-1 text-sm text-gray-500">Review the full candidate packet before proposing time slots or rejecting the profile.</p>
+                <h2 className="section-title">1. Candidate Dossier</h2>
+                <p className="mt-1 text-sm text-gray-500">Review the full candidate packet (resume + profile) before proposing time slots or rejecting the profile.</p>
               </div>
               {interview.resume_path && (
                 <a href={interview.resume_path} target="_blank" rel="noreferrer" className="btn-secondary">
@@ -417,7 +489,7 @@ export default function InterviewWorkspace() {
         <div className="workboard-lane">
           <div className="workspace-card panel-hover">
             <div className="flex items-center gap-2">
-              <h2 className="section-title">2. Feedback & Outcome</h2>
+              <h2 className="section-title">5. Feedback & outcome (shortlist · reject · no-show)</h2>
               <InfoTip text="Once the interview is complete, use this panel for structured scoring, rejection reasons, shortlist decisions, no-show handling, or another-round requests." />
             </div>
             <p className="mt-2 text-sm text-gray-500">
@@ -583,7 +655,7 @@ export default function InterviewWorkspace() {
           {needsSlotSuggestion && canReview && (
             <div className="focus-panel">
               <div className="flex items-center gap-2">
-                <h2 className="section-title">1. Suggest Two Interview Slots</h2>
+                <h2 className="section-title">2. Shortlist & suggest two slots</h2>
                 <InfoTip text="The interviewer or HOD starts the scheduling loop by suggesting two workable options. HR then confirms the final slot from the scheduling workspace." />
               </div>
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -646,7 +718,7 @@ export default function InterviewWorkspace() {
 
           <div className="workspace-card panel-hover">
             <div className="flex items-center gap-2">
-              <h2 className="section-title">3. Request Another Round or Send Reminder</h2>
+              <h2 className="section-title">4. Request another round / send reminder</h2>
               <InfoTip text="If this round is insufficient, request one or more additional rounds with remarks. Recruiters will see the request in the workflow and can increase the round plan." />
             </div>
             <div className="mt-5 space-y-4">

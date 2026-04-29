@@ -23,7 +23,8 @@ const navigationSections = [
     items: [
       { name: 'Analytics Copilot', path: '/analytics-copilot', icon: 'SparklesIcon',  roles: ['hr_admin', 'hr_recruiter', 'hod'] },
       { name: 'MIS Reports',       path: '/mis',               icon: 'ChartPieIcon',  roles: ['hr_admin', 'hr_recruiter'] },
-      { name: 'Audit Trail',       path: '/audit',             icon: 'ClockIcon',     roles: ['hr_admin'] },
+      { name: 'TAT Explorer',      path: '/tat',               icon: 'ClockIcon',     roles: ['hr_admin', 'hr_recruiter', 'hod'] },
+      { name: 'Audit Deck',        path: '/audit',             icon: 'ClockIcon',     roles: ['hr_admin'] },
     ],
   },
   {

@@ -194,26 +194,62 @@ export async function ensureInterviewTasksForRound(client, application, roundNum
   return createdTasks;
 }
 
+// All valid statuses across the lifecycle. Phase 0 introduces:
+//   - Blacklisted     (phone-banned candidate)
+//   - TalentPool      (parked, will live under ats_job_id='TP-POOL')
+//   - DocumentsInProgress / DocumentsCleared (post-Selected doc loop)
+//   - CTCSent / CTCAcceptance / CTCAccepted (offer prep)
+//   - SalaryRejected  (HR admin / approver rejected the CTC)
+//   - SignaturePending (offer letter uploaded, awaiting candidate signature)
+//   - Postponed       (joining date pushed)
+export const ALL_APPLICATION_STATUSES = [
+  'InQueue', 'Applied', 'Withdrawn', 'HRRejected', 'Blacklisted',
+  'TalentPool',
+  'Shortlisted', 'AwaitingHODResponse', 'HODRejected',
+  'AwaitingInterviewScheduling',
+  'Round1', 'Round1Rejected', 'Round2', 'Round2Rejected', 'Round3', 'Round3Rejected',
+  'AwaitingFeedback',
+  'Selected',
+  'DocumentsInProgress', 'DocumentsCleared',
+  'CTCSent', 'CTCAcceptance', 'CTCAccepted', 'SalaryRejected',
+  'OfferInProcess', 'SignaturePending', 'Offered',
+  'OfferAccepted', 'OfferRejected', 'OfferDropout',
+  'Postponed', 'Joined',
+];
+
 export const HR_MANAGED_TRANSITIONS = {
-  InQueue: ['Applied', 'HRRejected', 'Withdrawn'],
-  Applied: ['Shortlisted', 'HRRejected', 'Withdrawn'],
-  Shortlisted: ['AwaitingHODResponse', 'HRRejected', 'Withdrawn'],
-  AwaitingHODResponse: ['AwaitingInterviewScheduling', 'HODRejected', 'Withdrawn'],
-  AwaitingInterviewScheduling: ['Round1', 'Round2', 'Round3', 'HRRejected', 'Withdrawn'],
-  Round1: ['Round1Rejected', 'AwaitingFeedback', 'Round2', 'Selected', 'Withdrawn'],
-  Round2: ['Round2Rejected', 'AwaitingFeedback', 'Round3', 'Selected', 'Withdrawn'],
-  Round3: ['Round3Rejected', 'AwaitingFeedback', 'Selected', 'Withdrawn'],
-  AwaitingFeedback: ['Selected', 'Round1Rejected', 'Round2Rejected', 'Round3Rejected', 'Withdrawn'],
-  Selected: ['OfferInProcess', 'OfferRejected', 'Withdrawn'],
-  OfferInProcess: ['Offered', 'OfferRejected', 'Withdrawn'],
+  InQueue: ['Applied', 'Shortlisted', 'HRRejected', 'Withdrawn', 'Blacklisted', 'TalentPool'],
+  Applied: ['Shortlisted', 'HRRejected', 'Withdrawn', 'Blacklisted', 'TalentPool'],
+  Shortlisted: ['AwaitingHODResponse', 'HRRejected', 'Withdrawn', 'TalentPool', 'Blacklisted'],
+  AwaitingHODResponse: ['AwaitingInterviewScheduling', 'HODRejected', 'Withdrawn', 'TalentPool'],
+  AwaitingInterviewScheduling: ['Round1', 'Round2', 'Round3', 'HRRejected', 'Withdrawn', 'TalentPool'],
+  Round1: ['Round1Rejected', 'AwaitingFeedback', 'AwaitingInterviewScheduling', 'Round2', 'Selected', 'Withdrawn', 'TalentPool'],
+  Round2: ['Round2Rejected', 'AwaitingFeedback', 'AwaitingInterviewScheduling', 'Round3', 'Selected', 'Withdrawn', 'TalentPool'],
+  Round3: ['Round3Rejected', 'AwaitingFeedback', 'Selected', 'Withdrawn', 'TalentPool'],
+  AwaitingFeedback: ['Selected', 'Round1Rejected', 'Round2Rejected', 'Round3Rejected', 'AwaitingInterviewScheduling', 'Withdrawn', 'TalentPool'],
+  Selected: ['DocumentsInProgress', 'CTCSent', 'OfferInProcess', 'OfferRejected', 'Withdrawn', 'TalentPool'],
+  DocumentsInProgress: ['DocumentsCleared', 'Withdrawn', 'TalentPool', 'OfferDropout'],
+  DocumentsCleared: ['CTCSent', 'TalentPool', 'Withdrawn'],
+  CTCSent: ['CTCAcceptance', 'CTCAccepted', 'SalaryRejected', 'TalentPool', 'Withdrawn'],
+  CTCAcceptance: ['CTCAccepted', 'SalaryRejected', 'OfferDropout', 'TalentPool'],
+  CTCAccepted: ['OfferInProcess', 'OfferDropout', 'Withdrawn'],
+  OfferInProcess: ['SignaturePending', 'Offered', 'OfferRejected', 'OfferDropout', 'Withdrawn'],
+  SignaturePending: ['Offered', 'OfferRejected', 'OfferDropout'],
   Offered: ['OfferAccepted', 'OfferRejected', 'OfferDropout'],
-  OfferAccepted: ['Joined', 'OfferDropout'],
+  OfferAccepted: ['Postponed', 'Joined', 'OfferDropout'],
+  Postponed: ['Joined', 'OfferDropout', 'OfferAccepted'],
+  // Re-entries from a parked state
+  TalentPool: ['Applied', 'Shortlisted', 'Withdrawn', 'Blacklisted'],
+  HODRejected: ['TalentPool'],
+  Round1Rejected: ['TalentPool'],
+  Round2Rejected: ['TalentPool'],
+  Round3Rejected: ['TalentPool'],
+  SalaryRejected: ['TalentPool', 'CTCSent'],
 };
 
-// Terminal states from which no further transitions are permitted.
+// Hard-terminal states from which only data corrections are permitted.
 const TERMINAL_STATES = new Set([
-  'HRRejected', 'HODRejected', 'Round1Rejected', 'Round2Rejected', 'Round3Rejected',
-  'OfferRejected', 'OfferDropout', 'Withdrawn', 'Joined',
+  'Blacklisted', 'OfferRejected', 'OfferDropout', 'Withdrawn', 'Joined', 'HRRejected',
 ]);
 
 export function assertHrManagedTransition(currentStatus, nextStatus, options = {}) {

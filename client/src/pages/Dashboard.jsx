@@ -7,6 +7,7 @@ import AppModal from '../components/AppModal';
 import DataTable from '../components/DataTable';
 import PageHeader from '../components/ui/PageHeader';
 import StatCard from '../components/ui/StatCard';
+import { RingProgress, Sparkline, ScrollReveal, SectionEyebrow, AnimatedNumber } from '../components/ui/v2plus';
 import SectionCard from '../components/ui/SectionCard';
 import EmptyState from '../components/ui/EmptyState';
 import StatusPill, { toneForStatus } from '../components/ui/StatusPill';
@@ -96,7 +97,7 @@ function DemoProgressModal({ open, onClose, currentStep, demoRunning, demoError,
         {demoError && <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{demoError}</div>}
         {!demoRunning && currentStep >= DEMO_STEPS.length && (
           <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-center text-sm font-medium text-emerald-800">
-            Demo complete — dashboard refreshing.
+            Demo complete - dashboard refreshing.
           </div>
         )}
         {!demoRunning && demoStory?.stage_map && (
@@ -288,7 +289,7 @@ export default function Dashboard() {
 
       <PageHeader
         title={`Welcome, ${user?.name || user?.email?.split('@')[0]}`}
-        subtitle="Demand, screening pressure, interviewer follow-through, offer health, and conversion signal — at a glance."
+        subtitle="Demand, screening pressure, interviewer follow-through, offer health, and conversion signal - at a glance."
         meta={
           <>
             <span className="badge badge-blue">{compactNumber(stats?.open_jobs)} open jobs</span>
@@ -317,14 +318,14 @@ export default function Dashboard() {
         }
       />
 
-      {/* Stat strip */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <StatCard label="Open jobs" value={compactNumber(stats?.open_jobs)} hint={`${toNumber(stats?.screening) + toNumber(stats?.interviewing)} in evaluation`} />
-        <StatCard label="Applications" value={compactNumber(stats?.total_applications)} hint={`${toNumber(stats?.in_queue)} in queue`} />
-        <StatCard label="Offers made" value={compactNumber(stats?.offers_made)} hint={`${toNumber(stats?.offered)} in offer stage`} />
-        <StatCard label="Joined / month" value={compactNumber(stats?.joined_this_month)} hint={`${toNumber(backoutSummary.total_backouts)} backouts`} />
-        <StatCard label="Offer acceptance" value={`${toNumber(stats?.offer_acceptance_rate)}%`} hint="Accepted vs issued" />
-        <StatCard label="Avg time to fill" value={`${toNumber(insights.timeToFill?.average_days || stats?.avg_time_to_fill)}d`} hint="Req → first offer" />
+      {/* KPI strip - gradient accent bars per tone, animated counters, hover lift */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 v2-fade-up">
+        <StatCard tone="brand"   label="Open jobs"        value={<AnimatedNumber value={toNumber(stats?.open_jobs)} />} hint={`${toNumber(stats?.screening) + toNumber(stats?.interviewing)} in evaluation`} />
+        <StatCard tone="vibrant" label="Applications"     value={<AnimatedNumber value={toNumber(stats?.total_applications)} />} hint={`${toNumber(stats?.in_queue)} in queue`} />
+        <StatCard tone="cool"    label="Offers made"      value={<AnimatedNumber value={toNumber(stats?.offers_made)} />} hint={`${toNumber(stats?.offered)} in offer stage`} />
+        <StatCard tone="success" label="Joined / month"   value={<AnimatedNumber value={toNumber(stats?.joined_this_month)} />} hint={`${toNumber(backoutSummary.total_backouts)} backouts`} />
+        <StatCard tone="warn"    label="Offer acceptance" value={<><AnimatedNumber value={toNumber(stats?.offer_acceptance_rate)} />%</>} hint="Accepted vs issued" />
+        <StatCard tone="danger"  label="Avg time to fill" value={<><AnimatedNumber value={toNumber(insights.timeToFill?.average_days || stats?.avg_time_to_fill)} />d</>} hint="Req → first offer" />
       </div>
 
       {/* Funnel + Needs Attention */}
@@ -590,6 +591,7 @@ export default function Dashboard() {
         exportFileName="recent-applications"
         emptyMessage="No applications yet."
         onRowClick={(row) => navigate(`/applications/${row.id}/workflow`)}
+        collapsible
         columns={[
           { key: 'candidate_name', label: 'Candidate', render: (row) => (
             <div>

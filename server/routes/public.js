@@ -72,6 +72,7 @@ router.get('/jobs/:jobId', async (req, res) => {
        LEFT JOIN phases p ON j.phase_id = p.id
        WHERE (j.job_id = $1 ${isNumeric ? 'OR j.id = ' + parseInt(param, 10) : ''})
          AND j.active_flag = true
+         AND j.job_id <> 'TP-POOL'
          AND LOWER(COALESCE(j.status, 'draft')) NOT IN ('archived','closed','on_hold','filled','cancelled')
        LIMIT 1`,
       [param]
@@ -139,6 +140,7 @@ router.post('/jobs/:jobId/apply', upload.single('resume'), async (req, res) => {
        FROM jobs
        WHERE (job_id = $1 ${isNumeric ? 'OR id = ' + parseInt(jobId, 10) : ''})
          AND active_flag = true
+         AND job_id <> 'TP-POOL'
        LIMIT 1`,
       [jobId]
     );
@@ -152,6 +154,19 @@ router.post('/jobs/:jobId/apply', upload.single('resume'), async (req, res) => {
     }
 
     const payload = { ...(req.body || {}) };
+
+    // Blacklist gate — phone-based ban check before anything else.
+    const phoneNorm = String(payload.candidate_phone || '').replace(/\D/g, '').slice(-12);
+    if (phoneNorm) {
+      const banned = await pool.query(
+        `SELECT 1 FROM blacklisted_phones WHERE phone = $1 AND lifted_at IS NULL LIMIT 1`,
+        [phoneNorm]
+      );
+      if (banned.rows.length) {
+        return res.status(403).json({ error: 'Your application could not be processed. Please contact our recruiting team if you believe this is an error.' });
+      }
+    }
+
     if (req.file) {
       payload.resume_path = `/uploads/resumes/${req.file.filename}`;
       payload.resume_file_name = req.file.originalname;

@@ -452,6 +452,7 @@ export default function InterviewerPage() {
           exportFileName="interviews"
           emptyMessage="No interviews found."
           onRowClick={(row) => navigate(`/interviews/${row.id || row._id}/workspace`)}
+          collapsible
           columns={[
             { key: 'candidate_name', label: 'Candidate', render: (row) => (
               <div>

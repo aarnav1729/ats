@@ -550,7 +550,18 @@ export async function ensureSchema() {
     ALTER TABLE applications ADD COLUMN IF NOT EXISTS banned_by VARCHAR(255);
     ALTER TABLE audit_trail DROP CONSTRAINT IF EXISTS audit_trail_action_type_check;
     ALTER TABLE audit_trail ADD CONSTRAINT audit_trail_action_type_check
-      CHECK (action_type IN ('create', 'read', 'update', 'delete', 'approve', 'reject', 'reminder', 'message', 'schedule', 'upload'));
+      CHECK (action_type IN (
+        'create', 'read', 'update', 'delete',
+        'approve', 'reject', 'cxo_reject', 'hr_reject',
+        'reminder', 'message', 'schedule', 'upload',
+        'login', 'logout',
+        'blacklist', 'unblacklist',
+        'assign_recruiter', 'clear_recruiter',
+        'hold', 'resume',
+        'status_transition', 'send_email',
+        'move_job', 'move_talent_pool',
+        'reset_slots', 'approve_doc', 'reject_doc'
+      ));
 
     -- Candidate Clearance (post-document approval flow)
     CREATE TABLE IF NOT EXISTS candidate_clearance (
@@ -686,6 +697,185 @@ export async function ensureSchema() {
 
     -- Store CTC as formatted text alongside JSON
     ALTER TABLE candidate_clearance ADD COLUMN IF NOT EXISTS ctc_text TEXT;
+
+    -- ── Phase 0 ──────────────────────────────────────────────────────────
+    -- HR One external job id reference (free-text optional)
+    ALTER TABLE jobs ADD COLUMN IF NOT EXISTS hr_one_job_id VARCHAR(120);
+    CREATE INDEX IF NOT EXISTS idx_jobs_hr_one_job_id ON jobs (hr_one_job_id);
+
+    -- Talent-pool synthetic job code (reserved). Inserted via runtime seed.
+    -- Movement provenance: every TP transition writes a row here.
+    CREATE TABLE IF NOT EXISTS talent_pool_movements (
+      id SERIAL PRIMARY KEY,
+      application_id INTEGER REFERENCES applications(id) ON DELETE CASCADE,
+      candidate_email VARCHAR(255),
+      candidate_phone VARCHAR(40),
+      from_job_id VARCHAR(80),
+      to_job_id VARCHAR(80) DEFAULT 'TP-POOL',
+      from_status VARCHAR(60),
+      moved_by_email VARCHAR(255),
+      moved_by_role VARCHAR(40),
+      reason TEXT,
+      moved_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_tpm_app ON talent_pool_movements (application_id);
+    CREATE INDEX IF NOT EXISTS idx_tpm_candidate ON talent_pool_movements (LOWER(candidate_email));
+
+    -- Blacklist (ban a phone from future applications)
+    CREATE TABLE IF NOT EXISTS blacklisted_phones (
+      id SERIAL PRIMARY KEY,
+      phone VARCHAR(40) UNIQUE NOT NULL,
+      candidate_email VARCHAR(255),
+      candidate_name VARCHAR(255),
+      reason TEXT,
+      blacklisted_by_email VARCHAR(255),
+      blacklisted_at TIMESTAMP DEFAULT NOW(),
+      lifted_at TIMESTAMP,
+      lifted_by_email VARCHAR(255)
+    );
+    CREATE INDEX IF NOT EXISTS idx_blacklist_phone ON blacklisted_phones (phone);
+
+    -- CTC approval chain (recruiter1 → recruiter2 → hr_admin → optional approver)
+    CREATE TABLE IF NOT EXISTS ctc_approval_chain (
+      id SERIAL PRIMARY KEY,
+      application_id INTEGER REFERENCES applications(id) ON DELETE CASCADE,
+      step_index INTEGER NOT NULL,
+      role_required VARCHAR(40) NOT NULL,
+      assignee_email VARCHAR(255),
+      assignee_name VARCHAR(255),
+      status VARCHAR(40) DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','renegotiate','skipped')),
+      acted_at TIMESTAMP,
+      comments TEXT,
+      ctc_text TEXT,
+      ctc_snapshot JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_ctc_chain_app ON ctc_approval_chain (application_id);
+
+    -- Offer letters (uploaded PDF) + digital signature attestation
+    CREATE TABLE IF NOT EXISTS offer_letters (
+      id SERIAL PRIMARY KEY,
+      application_id INTEGER REFERENCES applications(id) ON DELETE CASCADE,
+      file_path TEXT,
+      file_name TEXT,
+      uploaded_by_email VARCHAR(255),
+      uploaded_at TIMESTAMP DEFAULT NOW(),
+      candidate_signed_at TIMESTAMP,
+      candidate_signature_data TEXT,
+      candidate_signature_ip VARCHAR(64),
+      candidate_decision VARCHAR(20),
+      candidate_decision_notes TEXT,
+      decision_at TIMESTAMP,
+      validity_days INTEGER DEFAULT 14,
+      expires_at TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_offer_letters_app ON offer_letters (application_id);
+
+    -- Joining events (tentative date, prepone/postpone, reminders, joined)
+    CREATE TABLE IF NOT EXISTS joining_events (
+      id SERIAL PRIMARY KEY,
+      application_id INTEGER REFERENCES applications(id) ON DELETE CASCADE,
+      event_type VARCHAR(40) NOT NULL,
+      old_date DATE,
+      new_date DATE,
+      reason TEXT,
+      committed_by_email VARCHAR(255),
+      committed_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_joining_app ON joining_events (application_id);
+
+    -- Candidate ↔ Recruiter chat
+    CREATE TABLE IF NOT EXISTS candidate_chat_messages (
+      id SERIAL PRIMARY KEY,
+      application_id INTEGER REFERENCES applications(id) ON DELETE CASCADE,
+      sender_email VARCHAR(255) NOT NULL,
+      sender_role VARCHAR(40) NOT NULL,
+      body TEXT NOT NULL,
+      attachment_path TEXT,
+      attachment_name TEXT,
+      read_by_recipient BOOLEAN DEFAULT false,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_app ON candidate_chat_messages (application_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_unread ON candidate_chat_messages (application_id, read_by_recipient);
+
+    -- Per-round interviewer override on a specific application (overrides job defaults)
+    CREATE TABLE IF NOT EXISTS application_round_overrides (
+      id SERIAL PRIMARY KEY,
+      application_id INTEGER REFERENCES applications(id) ON DELETE CASCADE,
+      round_number INTEGER NOT NULL,
+      interviewer_emails JSONB DEFAULT '[]'::jsonb,
+      added_by_email VARCHAR(255),
+      added_by_role VARCHAR(40),
+      added_at TIMESTAMP DEFAULT NOW(),
+      reason TEXT,
+      UNIQUE (application_id, round_number)
+    );
+
+    -- Talent-pool synthetic "job" so applications can carry ats_job_id='TP-POOL'.
+    -- created_by is NOT NULL on the existing schema, so we synthesize a value.
+    INSERT INTO jobs (job_id, job_title, status, active_flag, total_positions, created_by)
+    SELECT 'TP-POOL', 'Talent Pool', 'open', true, 0, 'system@premierenergies.com'
+    WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE job_id = 'TP-POOL');
+
+    -- Extend existing email_log for template + delivery tracking
+    ALTER TABLE email_log ADD COLUMN IF NOT EXISTS template_id VARCHAR(80);
+    ALTER TABLE email_log ADD COLUMN IF NOT EXISTS delivery_status VARCHAR(30) DEFAULT 'queued';
+    ALTER TABLE email_log ADD COLUMN IF NOT EXISTS error_message TEXT;
+
+    -- Phase 2 additions: interview metadata + CTC breakup/comparison + signature
+    ALTER TABLE interview_feedback ADD COLUMN IF NOT EXISTS interview_type VARCHAR(20) DEFAULT 'virtual';
+    ALTER TABLE interview_feedback ADD COLUMN IF NOT EXISTS reschedule_count INTEGER DEFAULT 0;
+    ALTER TABLE interview_feedback ADD COLUMN IF NOT EXISTS rescheduled_by_email VARCHAR(255);
+    ALTER TABLE interview_feedback ADD COLUMN IF NOT EXISTS rescheduled_at TIMESTAMP;
+    ALTER TABLE interview_feedback ADD COLUMN IF NOT EXISTS reschedule_reason TEXT;
+
+    -- CTC: breakup (single) + comparison (multi-row), plus optional attachments + scribble sign
+    CREATE TABLE IF NOT EXISTS ctc_breakups (
+      id SERIAL PRIMARY KEY,
+      application_id INTEGER REFERENCES applications(id) ON DELETE CASCADE,
+      created_by_email VARCHAR(255),
+      breakup_text TEXT,             -- excel-paste preserved (HTML or pre-formatted)
+      breakup_html TEXT,             -- when pasting from excel into a contenteditable
+      attachment_path TEXT,
+      attachment_name TEXT,
+      candidate_signature_data TEXT, -- base64 PNG
+      candidate_signed_at TIMESTAMP,
+      candidate_signature_ip VARCHAR(64),
+      candidate_decision VARCHAR(20),  -- 'accepted' | 'rejected'
+      candidate_decision_notes TEXT,
+      decision_at TIMESTAMP,
+      version INTEGER DEFAULT 1,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_ctc_breakups_app ON ctc_breakups (application_id);
+
+    CREATE TABLE IF NOT EXISTS ctc_comparisons (
+      id SERIAL PRIMARY KEY,
+      application_id INTEGER REFERENCES applications(id) ON DELETE CASCADE,
+      created_by_email VARCHAR(255),
+      comparison_text TEXT,
+      comparison_html TEXT,
+      attachment_path TEXT,
+      attachment_name TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_ctc_comparisons_app ON ctc_comparisons (application_id);
+    CREATE INDEX IF NOT EXISTS idx_email_log_ctx ON email_log (context_type, context_id);
+
+    -- Scheduled reminders (for interview T-24h / T-30m, joining day, offer expiry)
+    CREATE TABLE IF NOT EXISTS scheduled_reminders (
+      id SERIAL PRIMARY KEY,
+      kind VARCHAR(60) NOT NULL,
+      run_at TIMESTAMP NOT NULL,
+      payload JSONB DEFAULT '{}'::jsonb,
+      status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending','sent','cancelled','failed')),
+      attempts INTEGER DEFAULT 0,
+      last_error TEXT,
+      processed_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_reminders_due ON scheduled_reminders (status, run_at);
   `;
 
   try {

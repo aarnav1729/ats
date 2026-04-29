@@ -73,6 +73,7 @@ export default function TalentPool() {
   const [locationFilter, setLocationFilter] = useState('');
   const [expMin, setExpMin] = useState('');
   const [expMax, setExpMax] = useState('');
+  const [jobFilter, setJobFilter] = useState('');
   const [sortBy, setSortBy] = useState('created_at');
   const [sortOrder, setSortOrder] = useState('desc');
 
@@ -98,6 +99,7 @@ export default function TalentPool() {
         page, limit: 20, search: search || undefined, source: sourceFilter || undefined,
         education: educationFilter || undefined, location: locationFilter || undefined,
         exp_min: expMin || undefined, exp_max: expMax || undefined,
+        job_id: jobFilter || undefined,
         sort_by: sortBy, sort_order: sortOrder,
       });
       const data = res.data;
@@ -118,7 +120,7 @@ export default function TalentPool() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, sourceFilter, educationFilter, locationFilter, expMin, expMax, sortBy, sortOrder]);
+  }, [page, search, sourceFilter, educationFilter, locationFilter, expMin, expMax, jobFilter, sortBy, sortOrder]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -303,8 +305,8 @@ export default function TalentPool() {
         <StatCard label="Expiring soon" value={stats.expiringSoon} deltaTone="warning" hint="Pool lifespan ending within 30 days." />
       </div>
 
-      <SectionCard title="Filter candidates" subtitle="Narrow by source, education, location, or experience range.">
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-2.5">
+      <SectionCard title="Filter candidates" subtitle="Narrow by source, education, location, job, or experience range.">
+        <div className="grid grid-cols-2 md:grid-cols-7 gap-2.5">
           <input type="text" placeholder="Search name or email…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="input-field col-span-2" style={{ height: 36 }} />
           <select value={sourceFilter} onChange={e => { setSourceFilter(e.target.value); setPage(1); }} className="input-field" style={{ height: 36 }}>
             <option value="">All sources</option>
@@ -312,6 +314,10 @@ export default function TalentPool() {
           </select>
           <input type="text" placeholder="Education…" value={educationFilter} onChange={e => { setEducationFilter(e.target.value); setPage(1); }} className="input-field" style={{ height: 36 }} />
           <input type="text" placeholder="Location…" value={locationFilter} onChange={e => { setLocationFilter(e.target.value); setPage(1); }} className="input-field" style={{ height: 36 }} />
+          <select value={jobFilter} onChange={e => { setJobFilter(e.target.value); setPage(1); }} className="input-field" style={{ height: 36 }}>
+            <option value="">All jobs</option>
+            {openJobs.map(j => <option key={j.job_id} value={j.job_id}>{j.job_id} - {j.job_title}</option>)}
+          </select>
           <div className="flex gap-2">
             <input type="number" placeholder="Exp min" value={expMin} onChange={e => { setExpMin(e.target.value); setPage(1); }} className="input-field w-1/2" min="0" style={{ height: 36 }} />
             <input type="number" placeholder="Exp max" value={expMax} onChange={e => { setExpMax(e.target.value); setPage(1); }} className="input-field w-1/2" min="0" style={{ height: 36 }} />
@@ -327,6 +333,7 @@ export default function TalentPool() {
           <DataTable
             title="Talent Pool Candidates"
             subtitle="Open any profile to review the resume, edit details, move to a job, or run AI matching. Filters, selection, export, and column controls are available directly in the table."
+            collapsible
             data={candidates.map((candidate) => {
               const expiring = isExpiringSoon(candidate);
               const expired = isExpired(candidate);

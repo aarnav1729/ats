@@ -14,6 +14,7 @@ import XLSX from 'xlsx';
 import {
   assertHrManagedTransition,
   ensureInterviewTasksForRound,
+  ALL_APPLICATION_STATUSES,
 } from '../services/interviewWorkflow.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -30,13 +31,7 @@ const router = Router();
 const adminOrRecruiter = requireRole('hr_admin', 'hr_recruiter');
 const execFileAsync = promisify(execFile);
 
-const VALID_STATUSES = [
-  'InQueue', 'Applied', 'Withdrawn', 'HRRejected', 'Shortlisted',
-  'AwaitingHODResponse', 'HODRejected', 'AwaitingInterviewScheduling',
-  'Round1', 'Round1Rejected', 'Round2', 'Round2Rejected', 'Round3', 'Round3Rejected',
-  'AwaitingFeedback', 'Selected', 'OfferInProcess', 'Offered', 'OfferAccepted',
-  'OfferRejected', 'OfferDropout', 'Joined'
-];
+const VALID_STATUSES = ALL_APPLICATION_STATUSES;
 
 const PREBOARDING_STATUSES = ['OfferInProcess', 'Offered', 'OfferAccepted', 'Joined'];
 const DEFAULT_SELECTED_DOCUMENTS = [
@@ -917,6 +912,7 @@ router.get('/talent-pool', adminOrRecruiter, async (req, res) => {
       location,
       exp_min,
       exp_max,
+      job_id,
       sort_by = 'created_at',
       sort_order = 'desc',
     } = req.query;
@@ -929,6 +925,7 @@ router.get('/talent-pool', adminOrRecruiter, async (req, res) => {
       LEFT JOIN jobs j ON a.ats_job_id = j.job_id
       WHERE a.active_flag = true
         AND a.status <> 'Withdrawn'
+        AND (a.talent_pool_only = true OR a.ats_job_id IS NOT NULL)
     `;
 
     if (search) {
@@ -960,6 +957,11 @@ router.get('/talent-pool', adminOrRecruiter, async (req, res) => {
       idx += 1;
       params.push(Number(exp_max));
       baseQuery += ` AND COALESCE(a.candidate_years_of_experience, 0) <= $${idx}`;
+    }
+    if (job_id) {
+      idx += 1;
+      params.push(job_id);
+      baseQuery += ` AND a.ats_job_id = $${idx}`;
     }
 
     const allowedSorts = {

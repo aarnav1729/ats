@@ -33,6 +33,14 @@ import clearanceRoutes from "./routes/clearance.js";
 import timelineRoutes from "./routes/timeline.js";
 import requisitionHoldsRoutes from "./routes/requisitionHolds.js";
 import candidatePortalRoutes from "./routes/candidatePortal.js";
+import tatRoutes from "./routes/tat.js";
+import blacklistRoutes from "./routes/blacklist.js";
+import triageRoutes from "./routes/triage.js";
+import chatRoutes from "./routes/chat.js";
+import offersRoutes from "./routes/offers.js";
+import ctcChainRoutes from "./routes/ctcChain.js";
+import ctcBreakupRoutes from "./routes/ctcBreakup.js";
+import remindersService from "./services/reminders.js";
 import { authMiddleware } from "./middleware/auth.js";
 
 const app = express();
@@ -71,6 +79,20 @@ app.use("/api/candidates", authMiddleware, clearanceRoutes);
 app.use("/api/timeline", authMiddleware, timelineRoutes);
 app.use("/api/requisition-holds", authMiddleware, requisitionHoldsRoutes);
 app.use("/api/candidate-portal", authMiddleware, candidatePortalRoutes);
+app.use("/api/tat", authMiddleware, tatRoutes);
+app.use("/api/blacklist", authMiddleware, blacklistRoutes);
+app.use("/api/triage", authMiddleware, triageRoutes);
+app.use("/api/chat", authMiddleware, chatRoutes);
+app.use("/api/offers", authMiddleware, offersRoutes);
+app.use("/api/ctc-chain", authMiddleware, ctcChainRoutes);
+app.use("/api/ctc-breakup", authMiddleware, ctcBreakupRoutes);
+
+// Serve brand assets used by the email templates and the public job page.
+app.get("/pel.png", (_req, res) => res.sendFile(path.resolve(__dirname, "../pel.png")));
+app.get("/l.png", (_req, res) => res.sendFile(path.resolve(__dirname, "../l.png")));
+
+// Boot the reminder runner (offer expiry, interview T-24h / T-30m, joining day).
+remindersService.start();
 
 // Health check
 app.get("/api/health", async (_req, res) => {
@@ -317,37 +339,71 @@ async function setupOllama() {
 
 async function start() {
   try {
-    // 1. Build the client
-    console.log("🔨 Building client application...");
-    await buildClient();
-    console.log("✅ Client build complete");
+    // 1. Build the client (skip with SKIP_CLIENT_BUILD=1 for fast restarts)
+    if (process.env.SKIP_CLIENT_BUILD === "1") {
+      console.log("⏭️  Skipping client build (SKIP_CLIENT_BUILD=1).");
+    } else {
+      console.log("🔨 Building client application...");
+      await buildClient();
+      console.log("✅ Client build complete");
+    }
 
     // 2. Setup database schema
     console.log("🗄️  Setting up database schema...");
     await ensureSchema();
     console.log("✅ Database schema ready");
 
-    // 3. Setup Ollama (AI Service)
-    await setupOllama();
+    // 3. Setup Ollama (AI Service) — non-blocking; system runs without it.
+    if (process.env.SKIP_OLLAMA === "1") {
+      console.log("⏭️  Skipping Ollama setup (SKIP_OLLAMA=1).");
+    } else {
+      try {
+        await setupOllama();
+      } catch (err) {
+        console.warn(`⚠️  Ollama setup skipped: ${err.message}`);
+        console.warn("   (AI parsing + assistant will degrade to fallback. Set SKIP_OLLAMA=1 to silence.)");
+      }
+    }
 
-    // 4. Start HTTPS Server
-    const httpsOptions = {
-      key: fs.readFileSync(path.join(__dirname, "certs", "mydomain.key")),
-      cert: fs.readFileSync(
-        path.join(__dirname, "certs", "d466aacf3db3f299.crt")
-      ),
-      ca: fs.readFileSync(path.join(__dirname, "certs", "gd_bundle-g2-g1.crt")),
+    // 4. Start the server.
+    //    HTTPS if certs are present (Windows / production with GoDaddy bundle),
+    //    HTTP otherwise (dev on Mac/Linux without certs). Toggle with
+    //    USE_HTTP=1 to force plain HTTP regardless of certs.
+    const certDir = path.join(__dirname, "certs");
+    const certFiles = {
+      key: path.join(certDir, "mydomain.key"),
+      cert: path.join(certDir, "d466aacf3db3f299.crt"),
+      ca: path.join(certDir, "gd_bundle-g2-g1.crt"),
+    };
+    const certsAvailable = Object.values(certFiles).every((p) => {
+      try { return fs.existsSync(p); } catch { return false; }
+    });
+    const useHttp = process.env.USE_HTTP === "1" || !certsAvailable;
+
+    const onListen = (proto) => () => {
+      const banner = "═══════════════════════════════════════════════════";
+      console.log(banner);
+      console.log(`🚀 ${proto.toUpperCase()} server running → ${proto}://localhost:${PORT}`);
+      console.log(`🗄️  PostgreSQL → ${PG_CONFIG.host}:${PG_CONFIG.port}/${PG_CONFIG.database}`);
+      console.log(`🦙 Ollama AI → ${OLLAMA_BASE_URL} (Model: ${OLLAMA_MODEL})`);
+      console.log(`💻 Platform → ${process.platform} ${process.arch} · Node ${process.version}`);
+      console.log(banner);
     };
 
-    https.createServer(httpsOptions, app).listen(PORT, () => {
-      console.log("═══════════════════════════════════════════════════");
-      console.log(`🚀 HTTPS server running → https://localhost:${PORT}`);
-      console.log(
-        `🗄️  PostgreSQL → ${PG_CONFIG.host}:${PG_CONFIG.port}/${PG_CONFIG.database}`
-      );
-      console.log(`🦙 Ollama AI → ${OLLAMA_BASE_URL} (Model: ${OLLAMA_MODEL})`);
-      console.log("═══════════════════════════════════════════════════");
-    });
+    if (useHttp) {
+      if (!certsAvailable) {
+        console.warn(`⚠️  Certs not found in ${certDir}; starting HTTP server.`);
+      }
+      const http = await import("node:http");
+      http.createServer(app).listen(PORT, onListen("http"));
+    } else {
+      const httpsOptions = {
+        key: fs.readFileSync(certFiles.key),
+        cert: fs.readFileSync(certFiles.cert),
+        ca: fs.readFileSync(certFiles.ca),
+      };
+      https.createServer(httpsOptions, app).listen(PORT, onListen("https"));
+    }
   } catch (err) {
     console.error("❌ Startup failed:", err);
     process.exit(1);

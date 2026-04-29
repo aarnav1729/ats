@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { candidatePortalAPI } from '../services/api';
+import CandidateChatPanel from '../components/CandidateChatPanel';
+import OfferSignaturePanel from '../components/OfferSignaturePanel';
 
 const STAGE_LABELS = {
   post_selection: 'After Selection',
@@ -331,43 +333,59 @@ export default function CandidatePortal() {
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px' }}>
-      {/* Hero */}
+      {/* Hero — explicit white text on guaranteed dark gradient. !important defeats
+          any tailwind/preflight color reset that was bleeding into the inline styles. */}
       <div
         style={{
-          background: 'linear-gradient(135deg, #0a1d30 0%, #0c8da3 100%)',
-          color: '#fff',
-          borderRadius: 'var(--radius-lg, 16px)',
-          padding: '28px 24px',
+          background: 'linear-gradient(135deg, #0a1d30 0%, #143464 50%, #0c8da3 100%)',
+          color: '#ffffff',
+          borderRadius: 16,
+          padding: '32px 28px',
           marginBottom: 24,
+          boxShadow: '0 12px 28px rgba(11,29,54,0.18)',
         }}
       >
-        <div style={{ fontSize: 12, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.8 }}>
-          Candidate Portal
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.75)' }}>
+          Premier Energies · Candidate Portal
         </div>
-        <h1 style={{ fontSize: 26, fontWeight: 700, margin: '6px 0 4px', wordBreak: 'break-word' }}>
+        <h1 style={{ fontSize: 30, fontWeight: 800, margin: '8px 0 6px', color: '#ffffff', letterSpacing: '-0.01em', lineHeight: 1.15 }}>
           Welcome, {app?.candidate_name || 'candidate'}
         </h1>
-        <div style={{ fontSize: 14, opacity: 0.9, wordBreak: 'break-word' }}>
-          {app?.job_title ? <>Offer pipeline for <strong>{app.job_title}</strong></> : 'Your onboarding checklist is below'}
+        <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.92)', wordBreak: 'break-word', lineHeight: 1.5 }}>
+          {app?.job_title ? <>Tracking your application for <strong style={{ color: '#fff' }}>{app.job_title}</strong></> : 'Your onboarding checklist is below'}
         </div>
         {progress.total > 0 && (
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 12, marginBottom: 6, opacity: 0.9 }}>
+          <div style={{ marginTop: 18 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'rgba(255,255,255,0.95)' }}>
               {progress.done} of {progress.total} documents approved · {progress.pct}%
             </div>
-            <div style={{ height: 8, background: 'rgba(255,255,255,0.2)', borderRadius: 999, overflow: 'hidden' }}>
+            <div style={{ height: 10, background: 'rgba(255,255,255,0.18)', borderRadius: 999, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.12)' }}>
               <div
                 style={{
                   width: `${progress.pct}%`,
                   height: '100%',
-                  background: '#10b981',
-                  transition: 'width 0.3s',
+                  background: 'linear-gradient(90deg, #10b981, #34d399)',
+                  transition: 'width 0.4s cubic-bezier(.34,1.2,.64,1)',
+                  boxShadow: '0 0 12px rgba(16,185,129,0.5)',
                 }}
               />
             </div>
           </div>
         )}
       </div>
+
+      {/* Active offer letter — premium signature flow */}
+      <div style={{ marginBottom: 24 }}>
+        <OfferSignaturePanel />
+      </div>
+
+      {/* Live conversation with the recruiting team */}
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-main)', marginBottom: 12 }}>
+          Talk to your recruiter
+        </h2>
+        <CandidateChatPanel side="candidate" />
+      </section>
 
       {/* CTC Requests */}
       {ctcRequests.length > 0 && (

@@ -291,7 +291,7 @@ export default function Login() {
             </div>
 
             <p className="mt-6 text-center text-xs text-slate-500">
-              © {new Date().getFullYear()} Premier Energies Limited — Talent Operations
+              © {new Date().getFullYear()} Premier Energies Limited - Talent Operations
             </p>
           </div>
         </section>

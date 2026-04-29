@@ -125,7 +125,7 @@ export default function Jobs() {
 
       <div className="stat-grid">
         <StatCard label="Open" value={summary.open} deltaTone="success" hint="Currently posted and receiving applications." />
-        <StatCard label="On hold" value={summary.onHold} deltaTone="warning" hint="Paused — awaiting decision or budget." />
+        <StatCard label="On hold" value={summary.onHold} deltaTone="warning" hint="Paused - awaiting decision or budget." />
         <StatCard label="Closed" value={summary.closed} hint="Filled or decommissioned roles." />
         <StatCard label="Applications" value={summary.applications} hint="Received across visible jobs." />
       </div>
@@ -192,6 +192,7 @@ export default function Jobs() {
           exportFileName="jobs"
           emptyMessage={hasActiveFilters ? 'No jobs match your filters.' : 'No jobs yet. Create your first job to get started.'}
           onRowClick={(row) => navigate(`/jobs/${row.id}`)}
+          collapsible
           columns={[
             { key: 'job_id', label: 'Job ID', render: (row) => (
               <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--accent-blue)' }}>{row.job_id || '-'}</span>

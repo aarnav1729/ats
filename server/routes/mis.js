@@ -18,6 +18,10 @@ function buildFilters(query) {
     phase_id,
     recruiter_email,
     recruiter,
+    talent_pool, // 'include' (default) | 'only' | 'exclude'
+    hr_one_job_id,
+    status,
+    source,
   } = query;
   const params = [];
   let whereClause = 'WHERE 1=1';
@@ -32,6 +36,27 @@ function buildFilters(query) {
   if (department_id) { params.push(department_id); whereClause += ` AND j.department_id = $${params.length}`; }
   if (location_id) { params.push(location_id); whereClause += ` AND j.location_id = $${params.length}`; }
   if (phase_id) { params.push(phase_id); whereClause += ` AND j.phase_id = $${params.length}`; }
+  if (hr_one_job_id) { params.push(hr_one_job_id); whereClause += ` AND j.hr_one_job_id = $${params.length}`; }
+  if (status) {
+    if (Array.isArray(status)) {
+      const placeholders = status.map((s) => { params.push(s); return `$${params.length}`; }).join(',');
+      whereClause += ` AND a.status IN (${placeholders})`;
+    } else {
+      params.push(status);
+      whereClause += ` AND a.status = $${params.length}`;
+    }
+  }
+  if (source) { params.push(source); whereClause += ` AND a.source = $${params.length}`; }
+
+  // Talent-pool scoping. Default behaviour = include parked candidates so
+  // analytics still see them; `exclude` is used by funnel/efficiency views
+  // that should ignore the holding bay.
+  const tpMode = talent_pool || 'include';
+  if (tpMode === 'only') {
+    whereClause += ` AND (a.status = 'TalentPool' OR a.ats_job_id = 'TP-POOL')`;
+  } else if (tpMode === 'exclude') {
+    whereClause += ` AND a.status <> 'TalentPool' AND a.ats_job_id <> 'TP-POOL'`;
+  }
 
   return { whereClause, params };
 }
@@ -1529,6 +1554,7 @@ router.get('/raw-export', adminOrRecruiter, async (req, res) => {
 
         -- Job
         j.job_id                AS "Job ID",
+        j.hr_one_job_id         AS "HR One Job ID",
         j.job_title             AS "Job Title",
         j.status                AS "Job Status",
         j.number_of_positions   AS "Job Positions",
@@ -1605,7 +1631,31 @@ router.get('/raw-export', adminOrRecruiter, async (req, res) => {
         cc.renegotiation_count  AS "Renegotiations",
         cc.ctc_data             AS "CTC Data (JSON)",
 
-        -- Timing
+        -- Talent-pool provenance (latest movement, if any)
+        tpm.from_job_id         AS "TP From Job",
+        tpm.from_status         AS "TP From Status",
+        tpm.moved_by_email      AS "TP Moved By",
+        tpm.moved_at            AS "TP Moved At",
+        tpm.reason              AS "TP Reason",
+
+        -- Blacklist
+        bl.reason               AS "Blacklist Reason",
+        bl.blacklisted_by_email AS "Blacklisted By",
+        bl.blacklisted_at       AS "Blacklisted At",
+
+        -- Offer letter (latest)
+        ol.file_name            AS "Offer Letter File",
+        ol.uploaded_at          AS "Offer Released At",
+        ol.expires_at           AS "Offer Valid Until",
+        ol.candidate_signed_at  AS "Offer Signed At",
+        ol.candidate_decision   AS "Offer Decision",
+
+        -- Joining provenance (latest non-set event)
+        je.event_type           AS "Last Joining Event",
+        je.committed_by_email   AS "Joining Action By",
+        je.committed_at         AS "Joining Action At",
+
+        -- Timing (legacy headline)
         ROUND(EXTRACT(EPOCH FROM (NOW() - r.created_at)) / 86400)                   AS "Days Since Req",
         ROUND(EXTRACT(EPOCH FROM (a.created_at - r.created_at)) / 86400)            AS "Req → Applied (days)",
         ROUND(EXTRACT(EPOCH FROM (a.joining_date::timestamp - a.created_at)) / 86400) AS "Applied → Joined (days)"
@@ -1620,6 +1670,28 @@ router.get('/raw-export', adminOrRecruiter, async (req, res) => {
       LEFT JOIN grades g ON j.grade_id = g.id
       LEFT JOIN levels lv ON j.level_id = lv.id
       LEFT JOIN candidate_clearance cc ON cc.application_id = a.id
+      LEFT JOIN LATERAL (
+        SELECT * FROM talent_pool_movements t
+         WHERE t.application_id = a.id
+         ORDER BY moved_at DESC LIMIT 1
+      ) tpm ON true
+      LEFT JOIN LATERAL (
+        SELECT * FROM blacklisted_phones b
+         WHERE b.phone = REGEXP_REPLACE(COALESCE(a.candidate_phone, ''), '\\D', '', 'g')
+           AND lifted_at IS NULL
+         LIMIT 1
+      ) bl ON true
+      LEFT JOIN LATERAL (
+        SELECT * FROM offer_letters o
+         WHERE o.application_id = a.id
+         ORDER BY uploaded_at DESC LIMIT 1
+      ) ol ON true
+      LEFT JOIN LATERAL (
+        SELECT * FROM joining_events e
+         WHERE e.application_id = a.id
+           AND e.event_type IN ('joined', 'postpone', 'dropout', 'prepone')
+         ORDER BY committed_at DESC LIMIT 1
+      ) je ON true
       ${whereClause}
       ORDER BY a.created_at DESC
       LIMIT 5000
@@ -1629,6 +1701,71 @@ router.get('/raw-export', adminOrRecruiter, async (req, res) => {
     res.json({ rows: result.rows, count: result.rowCount });
   } catch (err) {
     console.error('Raw export error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// GET /jobs-export?include_applicants=true|false
+// One row per job (or per job × application). Includes hr_one_job_id and
+// every taxonomy join. Used by the Jobs page → Export ↓ menu.
+// ───────────────────────────────────────────────────────────────────────────
+router.get('/jobs-export', adminOrRecruiter, async (req, res) => {
+  try {
+    const includeApplicants = String(req.query.include_applicants || 'false') === 'true';
+    const { whereClause, params } = buildFilters(req.query);
+    const jobWhere = buildJobLevelFilters(whereClause).replace('WHERE 1=1', `WHERE j.job_id <> 'TP-POOL'`);
+
+    if (!includeApplicants) {
+      const sql = `
+        SELECT
+          j.job_id              AS "Job ID",
+          j.hr_one_job_id       AS "HR One Job ID",
+          j.job_title           AS "Job Title",
+          j.status              AS "Job Status",
+          j.created_at          AS "Created At",
+          j.created_by          AS "Created By",
+          j.recruiter_email     AS "Recruiter",
+          j.secondary_recruiter_email AS "Secondary Recruiter",
+          j.total_positions     AS "Total Positions",
+          j.compensation_currency AS "Currency",
+          j.compensation_min    AS "Comp Min",
+          j.compensation_max    AS "Comp Max",
+          j.publish_to_careers  AS "Public",
+          j.allow_employee_apply AS "Internal Apply",
+          j.allow_employee_refer AS "Referral Open",
+          bu.bu_name            AS "Business Unit",
+          d.department_name     AS "Department",
+          sd.sub_department_name AS "Sub Department",
+          l.location_name       AS "Location",
+          p.phase_name          AS "Phase",
+          g.grade               AS "Grade",
+          lv.level              AS "Level",
+          r.requisition_id      AS "Requisition",
+          r.created_by          AS "Requisition Raised By",
+          r.approved_at         AS "Requisition Approved At",
+          (SELECT COUNT(*) FROM applications a2 WHERE a2.ats_job_id = j.job_id AND a2.active_flag = true) AS "Applicants"
+        FROM jobs j
+        LEFT JOIN requisitions r ON j.requisition_id = r.id
+        LEFT JOIN business_units bu ON j.business_unit_id = bu.id
+        LEFT JOIN departments d ON j.department_id = d.id
+        LEFT JOIN sub_departments sd ON j.sub_department_id = sd.id
+        LEFT JOIN locations l ON j.location_id = l.id
+        LEFT JOIN phases p ON j.phase_id = p.id
+        LEFT JOIN grades g ON j.grade_id = g.id
+        LEFT JOIN levels lv ON j.level_id = lv.id
+        LEFT JOIN applications a ON FALSE  -- alias kept so jobWhere works
+        ${jobWhere}
+        ORDER BY j.created_at DESC
+        LIMIT 5000`;
+      const r = await pool.query(sql, params);
+      return res.json({ rows: r.rows, count: r.rowCount });
+    }
+
+    // include_applicants → fall through to raw-export shape (one row per app).
+    return res.redirect(307, `/api/mis/raw-export?${new URLSearchParams(req.query).toString()}`);
+  } catch (err) {
+    console.error('Jobs export error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

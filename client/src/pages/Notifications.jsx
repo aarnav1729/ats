@@ -48,6 +48,23 @@ function getNotifIcon(title) {
   return TYPE_ICONS.default;
 }
 
+function formatMessage(message) {
+  if (!message) return '';
+  let formatted = message
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  
+  formatted = formatted
+    .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-800">$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
+    .replace(/`(.*?)`/g, '<code class="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono text-pink-600">$1</code>')
+    .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" class="text-indigo-600 hover:text-indigo-800 underline" target="_blank" rel="noopener">$1</a>')
+    .replace(/\n/g, '<br/>');
+  
+  return formatted;
+}
+
 export default function Notifications() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -232,7 +249,10 @@ export default function Notifications() {
                       {row.title || 'Notification'}
                     </p>
                     {row.message && (
-                      <p className="mt-1 text-sm text-gray-500 whitespace-normal break-words">{row.message}</p>
+                      <div 
+                        className="mt-1 text-sm text-gray-600 whitespace-normal break-words"
+                        dangerouslySetInnerHTML={{ __html: formatMessage(row.message) }}
+                      />
                     )}
                   </div>
                   <div className="flex-shrink-0 flex items-center gap-2">

@@ -310,7 +310,7 @@ export default function CandidatePage() {
                       </button>
                     ) : doc.status === 'uploaded' ? (
                       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 text-center">
-                        Uploaded — awaiting recruiter review
+                        Uploaded - awaiting recruiter review
                       </div>
                     ) : (
                       <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 text-center">

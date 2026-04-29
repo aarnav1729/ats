@@ -25,6 +25,38 @@ const extractItems = (payload) => {
   return [];
 };
 
+function StepProgress({ step, onStepClick }) {
+  return (
+    <div className="mb-8">
+      <div className="flex items-center justify-between">
+        {STEPS.map((label, index) => (
+          <div key={label} className="flex flex-1 items-center">
+            <button
+              type="button"
+              onClick={() => index < step && onStepClick?.(index)}
+              className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
+                index < step
+                  ? 'bg-emerald-500 text-white'
+                  : index === step
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-gray-200 text-gray-500'
+              }`}
+            >
+              {index < step ? 'OK' : index + 1}
+            </button>
+            <span className={`ml-3 hidden text-sm font-medium sm:inline ${index === step ? 'text-indigo-600' : 'text-gray-500'}`}>
+              {label}
+            </span>
+            {index < STEPS.length - 1 && (
+              <div className={`mx-3 h-0.5 flex-1 ${index < step ? 'bg-emerald-500' : 'bg-gray-200'}`} />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function CreateRequisition() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -624,7 +656,7 @@ export default function CreateRequisition() {
                   <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{routeStep.label}</span>
                   <p className="text-sm text-gray-800 mt-0.5">
                     {routeStep.approvers?.length
-                      ? routeStep.approvers.map((a) => a.name || a.email).join(', ')
+                      ? routeStep.approvers.map((a) => a.name || a.email).join(' or ')
                       : <span className="text-amber-600">No approver mapped yet</span>}
                   </p>
                 </div>
@@ -638,7 +670,7 @@ export default function CreateRequisition() {
               </svg>
               <span>
                 {form.created_by && form.created_by.toLowerCase() === (approvalPreview.cxo_approvers?.[0]?.email || '').toLowerCase()
-                  ? 'You are the mapped CXO approver — CXO stage is skipped, going directly to HR Admin.'
+                  ? 'You are the mapped CXO approver - CXO stage is skipped, going directly to HR Admin.'
                   : 'No CXO approver mapping found for this requisitioner. The requisition will go directly to HR Admin.'}
               </span>
             </div>
@@ -1127,42 +1159,21 @@ export default function CreateRequisition() {
 
   return (
     <div className="workspace-shell animate-fade-in-up">
-      <section className="workspace-hero">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <p className="workspace-eyebrow">{isEdit ? 'Refine Demand' : 'Create Demand'}</p>
-            <h1 className="page-title mt-3">{isEdit ? 'Edit Requisition' : 'New Requisition'}</h1>
-            <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600">
-              {step === 0 && 'Capture the role, ownership, and hiring intent before it enters the approval lane.'}
-              {step === 1 && 'Lay out positions by type, location, and phase so downstream conversion stays clean.'}
-              {step === 2 && 'Review the request, check routing, and submit a polished requisition package.'}
-            </p>
-            <div className="mt-6 flex flex-wrap gap-2">
-              {STEPS.map((label, index) => (
-                <span
-                  key={label}
-                  className={`glass-chip border-[rgba(29,33,41,0.08)] ${step === index ? 'bg-slate-900 text-white' : 'bg-white/84 text-slate-600'}`}
-                >
-                  {index + 1}. {label}
-                </span>
-              ))}
-            </div>
-          </div>
-          <button
-            onClick={() => { haptic.light(); navigate('/requisitions'); }}
-            className="btn-secondary"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-            Cancel
-          </button>
+      <div className="mb-6 flex items-center gap-3">
+        <button onClick={() => navigate('/requisitions')} className="text-gray-400 hover:text-gray-600">
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+        </button>
+        <div>
+          <h1 className="page-title">{isEdit ? 'Edit Requisition' : 'New Requisition'}</h1>
+          <p className="mt-0.5 text-sm text-gray-500">
+            {step === 0 && 'Capture the role, ownership, and hiring intent before it enters the approval lane.'}
+            {step === 1 && 'Lay out positions by type, location, and phase so downstream conversion stays clean.'}
+            {step === 2 && 'Review the request, check routing, and submit a polished requisition package.'}
+          </p>
         </div>
-      </section>
-
-      <div className="workspace-card">
-        {renderProgressBar()}
       </div>
+
+      <StepProgress step={step} onStepClick={setStep} />
 
       <div className="workspace-card animate-scale-in">
         {step === 0 && renderBasicInfo()}

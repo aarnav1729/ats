@@ -8,7 +8,7 @@ import { PageHeader, Tabs, StatCard, SectionCard, EmptyState } from '../componen
 import haptic from '../utils/haptic';
 
 /**
- * MIS — Redesigned from scratch (v2).
+ * MIS - Redesigned from scratch (v2).
  *
  * Design principles
  *  - Tabbed hub: Executive Overview · TAT & Funnel · Recruiter Output · Backouts & Join Risk · Raw Data · Step TAT
@@ -118,6 +118,7 @@ function ReportCard({ title, subtitle, children, working, rows, filename, action
               data={rows}
               exportFileName={filename || 'report'}
               columns={Object.keys(rows[0]).map((key) => ({ key, label: key.replace(/_/g, ' ') }))}
+              collapsible
             />
           </>
         ) : (
@@ -203,7 +204,7 @@ export default function MIS() {
   const [loading, setLoading] = useState(true);
 
   // Shared filter bar
-  const [filters, setFilters] = useState({ date_from: '', date_to: '', recruiter: '' });
+  const [filters, setFilters] = useState({ date_from: '', date_to: '', recruiter: '', talent_pool: 'include', hr_one_job_id: '' });
 
   // Datasets
   const [ds, setDs] = useState({
@@ -347,7 +348,7 @@ export default function MIS() {
       <PageHeader
         eyebrow="MIS Reports"
         title="Hiring performance"
-        subtitle="Executive metrics, TAT analysis, recruiter output, backout risk, and a fully filterable raw dataset — every number explained with its working."
+        subtitle="Executive metrics, TAT analysis, recruiter output, backout risk, and a fully filterable raw dataset - every number explained with its working."
         breadcrumbs={[{ label: 'Home', href: '/' }, { label: 'MIS Reports' }]}
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -376,8 +377,20 @@ export default function MIS() {
             <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Recruiter email</label>
             <input type="text" className="input-field" placeholder="name@premierenergies.com" value={filters.recruiter} onChange={(e) => setFilters((p) => ({ ...p, recruiter: e.target.value }))} />
           </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Talent pool</label>
+            <select className="input-field" value={filters.talent_pool} onChange={(e) => setFilters((p) => ({ ...p, talent_pool: e.target.value }))}>
+              <option value="include">Include parked candidates</option>
+              <option value="exclude">Exclude parked candidates</option>
+              <option value="only">Only parked candidates</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>HR One job ID</label>
+            <input type="text" className="input-field" placeholder="HR1-…" value={filters.hr_one_job_id} onChange={(e) => setFilters((p) => ({ ...p, hr_one_job_id: e.target.value }))} />
+          </div>
           <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-            <button type="button" className="btn-secondary btn-sm" onClick={() => setFilters({ date_from: '', date_to: '', recruiter: '' })}>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setFilters({ date_from: '', date_to: '', recruiter: '', talent_pool: 'include', hr_one_job_id: '' })}>
               Reset
             </button>
           </div>
@@ -424,8 +437,8 @@ Stages are mapped as InQueue, Applied, Shortlisted, Interview (Round1/2/3 + Awai
               title="Time to fill vs time to join"
               subtitle="Two speed reads that matter most to leadership."
               rows={[
-                { metric: 'Avg days — requisition → first offer', value: ds.timeToFill.average_days },
-                { metric: 'Avg days — offer accepted → joined', value: ds.timeToJoin.average_days },
+                { metric: 'Avg days - requisition → first offer', value: ds.timeToFill.average_days },
+                { metric: 'Avg days - offer accepted → joined', value: ds.timeToJoin.average_days },
                 { metric: 'Offer acceptance %', value: ds.offerAcceptance.rate },
                 { metric: 'Offer → join %', value: ds.offerJoinRatio.ratio },
               ]}
@@ -465,7 +478,7 @@ All four exclude applications where the parent requisition was on_hold during th
             working={`TAT days = ROUND((NOW() - COALESCE(r.created_at, j.created_at)) / 86400) for each open job.
 Bucketed into 0–30 / 31–60 / 61–90 / 90+ day ranges.
 Split by requisition_type: "Replacement" vs "New Position" (anything else).
-Hold-paused days are excluded if the parent requisition had an active hold window — those seconds are deducted from the TAT before bucketing.`}
+Hold-paused days are excluded if the parent requisition had an active hold window - those seconds are deducted from the TAT before bucketing.`}
           >
             <RangeTable
               summary={openTatSummary}
@@ -597,15 +610,15 @@ Counts every application where recruiter_email is attributed. Uses filters above
 
           <ReportCard
             title="90+ day aged candidates by recruiter"
-            subtitle="Candidates still in active pipeline past 90 days — allocation review."
+            subtitle="Candidates still in active pipeline past 90 days - allocation review."
             rows={ds.ninetyDaysRecruiter.details || []}
             filename="mis-ninety-days-recruiter"
             working={`SELECT a.recruiter_email, a.application_id, a.candidate_name, (NOW() - a.created_at) AS age
 FROM applications a WHERE a.active_flag AND a.status NOT IN (TERMINAL_STATUSES) AND (NOW() - a.created_at) > INTERVAL '90 days'.
-These candidates should be escalated or disposed of — they drag the overall TAT up.`}
+These candidates should be escalated or disposed of - they drag the overall TAT up.`}
           >
             {(ds.ninetyDaysRecruiter.details || []).length === 0 ? (
-              <EmptyState title="All candidates within 90 days" description="No aged candidates — healthy pipeline state." />
+              <EmptyState title="All candidates within 90 days" description="No aged candidates - healthy pipeline state." />
             ) : (
               <p style={{ fontSize: 13, color: 'var(--text-body)', margin: 0 }}>
                 <strong>{ds.ninetyDaysRecruiter.details.length}</strong> candidates aged over 90 days. Open &ldquo;Show working&rdquo; to export the full list.
@@ -736,7 +749,7 @@ Shows top concentrated reasons for drop-out so HR can design interventions.`}
             }
           >
             {!rawLoaded ? (
-              <EmptyState title="Click Load data to populate" description="Heavy query — kept out of initial page load. Use filters to narrow before loading." />
+              <EmptyState title="Click Load data to populate" description="Heavy query - kept out of initial page load. Use filters to narrow before loading." />
             ) : rawRows.length === 0 ? (
               <EmptyState title="No rows match filters" description="Widen the date range or clear recruiter filter." />
             ) : (
@@ -746,6 +759,7 @@ Shows top concentrated reasons for drop-out so HR can design interventions.`}
                 data={rawRows}
                 exportFileName="mis-raw-export"
                 columns={Object.keys(rawRows[0]).map((key) => ({ key, label: key }))}
+                collapsible
               />
             )}
           </SectionCard>
@@ -759,10 +773,11 @@ Shows top concentrated reasons for drop-out so HR can design interventions.`}
         ) : (
           <DataTable
             title={drillTitle}
-            subtitle={`${drillRows.length} row${drillRows.length === 1 ? '' : 's'} — use search, sort, column visibility, and export.`}
+            subtitle={`${drillRows.length} row${drillRows.length === 1 ? '' : 's'} - use search, sort, column visibility, and export.`}
             data={drillRows}
             exportFileName={(drillTitle || 'mis-drilldown').replace(/[^a-z0-9]/gi, '-').toLowerCase()}
             columns={Object.keys(drillRows[0]).slice(0, 18).map((key) => ({ key, label: key.replace(/_/g, ' ') }))}
+            collapsible
           />
         )}
       </AppModal>

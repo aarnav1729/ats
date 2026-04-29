@@ -77,6 +77,7 @@ export default function DataTable({
   exportFileName = 'export',
   pageSize: defaultPageSize = 10,
   emptyMessage = 'No data to display.',
+  collapsible = false,
 }) {
   const [globalSearch, setGlobalSearch] = useState('');
   const [columnFilters, setColumnFilters] = useState({});
@@ -88,6 +89,7 @@ export default function DataTable({
   const [showColumnMenu, setShowColumnMenu] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(defaultPageSize);
+  const [collapsed, setCollapsed] = useState(collapsible);
 
   const filterInputRef = useRef(null);
   const columnMenuRef = useRef(null);
@@ -246,6 +248,7 @@ export default function DataTable({
 
   return (
     <div
+      className="overflow-hidden"
       style={{
         background: 'var(--surface)',
         border: '1px solid var(--line)',
@@ -256,19 +259,53 @@ export default function DataTable({
     >
       {/* Header */}
       {(title || subtitle) && (
-        <div style={{ padding: '18px 20px 0' }}>
-          {title && (
-            <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-main)', letterSpacing: '-0.01em' }}>
-              {title}
-            </h2>
-          )}
-          {subtitle && (
-            <p style={{ marginTop: 4, fontSize: 13, color: 'var(--text-faint)' }}>{subtitle}</p>
-          )}
+        <div className="flex items-center justify-between" style={{ padding: '16px 20px 12px' }}>
+          <div className="flex items-center gap-3">
+            {collapsible && (
+              <button
+                type="button"
+                onClick={() => setCollapsed(!collapsed)}
+                className="flex items-center justify-center transition-all hover:bg-slate-100 rounded-md"
+                style={{ width: 24, height: 24, padding: 0 }}
+                title={collapsed ? 'Expand' : 'Collapse'}
+              >
+                <svg 
+                  className="w-4 h-4 text-slate-500 transition-transform duration-200" 
+                  fill="none" 
+                  viewBox="0 0 24 24" 
+                  strokeWidth={2} 
+                  stroke="currentColor"
+                  style={{ transform: collapsed ? 'rotate(0deg)' : 'rotate(180deg)' }}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            )}
+            <div>
+              {title && (
+                <div className="flex items-center gap-2">
+                  <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-main)', letterSpacing: '-0.01em' }}>
+                    {title}
+                  </h2>
+                  {collapsed && data.length > 0 && (
+                    <span 
+                      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600"
+                    >
+                      {data.length} {data.length === 1 ? 'row' : 'rows'}
+                    </span>
+                  )}
+                </div>
+              )}
+              {subtitle && (
+                <p style={{ marginTop: 2, fontSize: 13, color: 'var(--text-faint)' }}>{subtitle}</p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
       {/* Toolbar */}
+      {!collapsed && (
       <div
         className="flex flex-wrap items-center gap-2.5"
         style={{
@@ -407,9 +444,10 @@ export default function DataTable({
           </span>
         </button>
       </div>
+      )}
 
-      {/* Table */}
-      <div style={{ overflow: 'auto', maxHeight: '70vh' }}>
+      {!collapsed && (
+        <div className="overflow-x-auto" style={{ overflow: 'auto', maxHeight: '70vh' }}>
         <table className="data-table" role="grid" style={{ width: 'auto', minWidth: '100%', tableLayout: 'auto' }}>
           <thead>
             <tr>
@@ -591,6 +629,7 @@ export default function DataTable({
           </tbody>
         </table>
       </div>
+      )}
 
       {/* Pagination */}
       {sortedData.length > 0 && (

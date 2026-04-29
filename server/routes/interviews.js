@@ -390,12 +390,73 @@ router.put('/:id/feedback', adminOrInterviewer, async (req, res) => {
   }
 });
 
+// PUT /interviews/:id/reset-slots
+// Recruiter-driven reset: clears any previously suggested or confirmed slot
+// for this round and bounces the round back to "AwaitingHODResponse" so the
+// interviewer is re-prompted to suggest two new slots. Audited + timelined
+// so the rescheduling history stays visible.
+router.put('/:id/reset-slots', adminOrInterviewer, async (req, res) => {
+  try {
+    const { reason } = req.body || {};
+    const context = await getRoundInterviewContext(req.params.id);
+    if (!context) return res.status(404).json({ error: 'Not found' });
+    const { interview, application, panelEmails } = context;
+    await pool.query(
+      `UPDATE interview_feedback
+          SET status = 'review_pending',
+              scheduled_datetime = NULL,
+              reschedule_count = COALESCE(reschedule_count, 0) + 1,
+              rescheduled_by_email = $2,
+              rescheduled_at = NOW(),
+              reschedule_reason = $3,
+              updated_at = NOW()
+        WHERE application_id = $1 AND round_number = $4`,
+      [interview.application_id, req.user.email, reason || null, interview.round_number]
+    );
+    await pool.query(
+      `UPDATE applications SET status = 'AwaitingHODResponse', updated_at = NOW() WHERE id = $1`,
+      [interview.application_id]
+    );
+    await logAudit({
+      actionBy: req.user.email, actionType: 'reset_slots', entityType: 'interview', entityId: req.params.id,
+      metadata: { reason, round: interview.round_number, panel: panelEmails },
+    });
+    const { logTimeline } = await import('../services/timeline.js');
+    await logTimeline({
+      entityType: 'application',
+      entityId: application.application_id || interview.application_id,
+      eventType: 'interview.slots_reset',
+      actorEmail: req.user.email,
+      actorRole: req.user.role,
+      summary: `Round ${interview.round_number} rescheduled — interviewer asked to re-suggest slots${reason ? ` · ${reason}` : ''}`,
+      payload: { round: interview.round_number, reason },
+      toState: 'AwaitingHODResponse',
+    });
+    // Notify the interviewers
+    const { sendNotificationEmail } = await import('../services/email.js');
+    for (const e of panelEmails) {
+      sendNotificationEmail(e,
+        `Re-suggest slots: ${application.candidate_name}`,
+        `<p>The recruiting team has rescheduled Round ${interview.round_number}. Please open Interview Hub and suggest two new time slots.</p>${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ''}`,
+        '/interviews'
+      ).catch(() => {});
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('reset-slots error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.put('/:id/reschedule', adminOrInterviewer, async (req, res) => {
   try {
-    const { reason, new_datetime, scheduled_at } = req.body;
+    const { reason, new_datetime, scheduled_at, interview_type } = req.body;
     const nextDatetime = new_datetime || scheduled_at || null;
     if (!nextDatetime) {
       return res.status(400).json({ error: 'A confirmed interview date and time is required' });
+    }
+    if (interview_type && !['in_person', 'virtual', 'phone'].includes(interview_type)) {
+      return res.status(400).json({ error: 'interview_type must be in_person, virtual, or phone' });
     }
     const context = await getRoundInterviewContext(req.params.id);
     if (!context) return res.status(404).json({ error: 'Not found' });
@@ -405,10 +466,15 @@ router.put('/:id/reschedule', adminOrInterviewer, async (req, res) => {
       UPDATE interview_feedback
       SET status = 'scheduled',
           scheduled_datetime = COALESCE($1, scheduled_datetime),
+          interview_type = COALESCE($5, interview_type),
+          reschedule_count = COALESCE(reschedule_count, 0) + 1,
+          rescheduled_by_email = $6,
+          rescheduled_at = NOW(),
+          reschedule_reason = $2,
           remarks = CONCAT(COALESCE(remarks, ''), E'\nSchedule updated: ', COALESCE($2::text, 'Requested from UI')),
           updated_at = NOW()
       WHERE application_id = $3 AND round_number = $4
-    `, [nextDatetime, reason || null, interview.application_id, interview.round_number]);
+    `, [nextDatetime, reason || null, interview.application_id, interview.round_number, interview_type || null, req.user.email]);
 
     const existingTimes = Array.isArray(application?.interview_datetimes)
       ? application.interview_datetimes
@@ -526,13 +592,25 @@ router.put('/:id/mark-no-show', adminOrInterviewer, async (req, res) => {
     if (!interview.scheduled_datetime) {
       return res.status(400).json({ error: 'No-show can only be recorded after a confirmed interview has been scheduled' });
     }
+
+    // Phase 6: enforce a 10-minute lockout after the scheduled time so a
+    // panel can't immediately mark someone no-show before the buffer.
+    const scheduledMs = new Date(interview.scheduled_datetime).getTime();
+    const tenMinutesMs = 10 * 60 * 1000;
+    if (Date.now() < scheduledMs + tenMinutesMs) {
+      const wait = Math.ceil((scheduledMs + tenMinutesMs - Date.now()) / 60000);
+      return res.status(425).json({
+        error: `Please wait ${wait} more minute${wait === 1 ? '' : 's'} (until 10 minutes past the scheduled time) before marking no-show.`,
+      });
+    }
+
     const updateResult = await pool.query(
       `WITH eligible_round AS (
          SELECT application_id, round_number
          FROM interview_feedback
          WHERE id = $4
            AND scheduled_datetime IS NOT NULL
-           AND scheduled_datetime <= NOW()
+           AND scheduled_datetime + interval '10 minutes' <= NOW()
        )
        UPDATE interview_feedback AS feedback
        SET status = 'no_show',
@@ -585,6 +663,20 @@ router.put('/:id/mark-no-show', adminOrInterviewer, async (req, res) => {
         'Interview No-Show Recorded',
         `<p>The interview for <strong>${application.candidate_name}</strong> was marked as a no-show for the ${party}.</p><p>Reason: ${reason}</p><p>The ATS has moved the candidate back into scheduling so the recruiter can coordinate a fresh slot.</p>`
       ).catch((err) => console.error('No-show email error:', err.message));
+    }
+
+    // Phase 6: send the candidate the empathic 24-hour grace email so they
+    // can come back to us before the application is closed.
+    if (party === 'candidate' && application.candidate_email) {
+      try {
+        const { noShowGraceEmail } = await import('../services/txEmails.js');
+        const { sendEmail } = await import('../services/email.js');
+        const html = noShowGraceEmail({
+          candidateName: application.candidate_name,
+          jobTitle: application.job_title || 'the role you applied for',
+        });
+        sendEmail(application.candidate_email, 'We missed you at the interview', html).catch(() => {});
+      } catch (err) { console.error('Grace email error:', err.message); }
     }
 
     res.json({ message: 'No-show recorded and candidate moved back to scheduling' });

@@ -1227,6 +1227,36 @@ router.post('/', allowedRoles, async (req, res) => {
             : `Requisition ${requisitionId} for "${payload.job_title}" is awaiting your approval.`
         );
       }
+
+      // Phase 3: branded admin alert + raiser confirmation using the new
+      // Goldman-style templates.
+      if (status !== 'draft') {
+        const { requisitionRaisedAdminEmail, requisitionRaisedConfirmationEmail } = await import('../services/txEmails.js');
+        const { sendEmail } = await import('../services/email.js');
+
+        // Admin alert (always — informs the HR admin team a new req exists)
+        const adminEmails = hrAdmins.map((a) => a.email).filter(Boolean);
+        if (adminEmails.length) {
+          sendEmail(adminEmails,
+            `New requisition ${requisitionId} — ${payload.job_title}`,
+            requisitionRaisedAdminEmail({
+              requisitionId,
+              raisedBy: req.user.email,
+              jobTitle: payload.job_title,
+              type: requiresCxo ? 'new_hire' : 'replacement',
+            })
+          ).catch(() => {});
+        }
+        // Raiser confirmation
+        sendEmail(req.user.email,
+          `Requisition ${requisitionId} submitted`,
+          requisitionRaisedConfirmationEmail({
+            requisitionId,
+            jobTitle: payload.job_title,
+            type: requiresCxo ? 'new_hire' : 'replacement',
+          })
+        ).catch(() => {});
+      }
     } catch (emailErr) {
       console.error('Requisition notification error:', emailErr.message);
     }

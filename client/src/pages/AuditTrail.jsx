@@ -283,7 +283,7 @@ export default function AuditTrail() {
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Audit Trail' }]}
         title="Audit Trail"
-        subtitle="Every state change, approval, and admin action — searchable by actor, entity, or field."
+        subtitle="Every state change, approval, and admin action - searchable by actor, entity, or field."
         meta={[{ label: `${total} actions` }]}
         actions={<button onClick={handleExport} className="btn-secondary">Export</button>}
       />

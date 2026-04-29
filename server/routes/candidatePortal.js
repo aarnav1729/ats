@@ -214,6 +214,50 @@ router.get('/me', candidateOnly, async (req, res) => {
   }
 });
 
+// ── HR-side: recruiter uploads a document on behalf of a candidate ────────
+// Handy when the candidate sent docs over email and we want them centralised.
+router.post('/applications/:applicationId/documents/:docId/upload-as-hr', hrAny, upload.single('file'), async (req, res) => {
+  try {
+    const appQ = await pool.query(
+      `SELECT id, application_id, candidate_email, candidate_name, recruiter_email, secondary_recruiter_email
+         FROM applications WHERE application_id = $1 OR id::text = $1 LIMIT 1`,
+      [String(req.params.applicationId)]
+    );
+    if (!appQ.rows.length) return res.status(404).json({ error: 'Application not found' });
+    const app = appQ.rows[0];
+    const docQ = await pool.query(
+      `SELECT * FROM candidate_documents WHERE id = $1 AND application_id = $2`,
+      [Number(req.params.docId), app.id]
+    );
+    if (!docQ.rows.length) return res.status(404).json({ error: 'Document slot not found' });
+    if (!req.file) return res.status(400).json({ error: 'File required' });
+    const filePath = `/uploads/documents/${req.file.filename}`;
+    const updated = await pool.query(
+      `UPDATE candidate_documents SET
+         file_path = $1, file_name = $2, status = 'uploaded',
+         uploaded_at = NOW(), uploaded_by_email = $3,
+         version = COALESCE(version, 1) + CASE WHEN file_path IS NOT NULL THEN 1 ELSE 0 END,
+         rejection_reason = NULL, updated_at = NOW()
+       WHERE id = $4 RETURNING *`,
+      [filePath, req.file.originalname, req.user.email, req.params.docId]
+    );
+    await logTimeline({
+      entityType: 'document',
+      entityId: `${app.application_id}:${req.params.docId}`,
+      eventType: 'document.uploaded_by_hr',
+      stage: docQ.rows[0].stage,
+      actorEmail: req.user.email,
+      actorRole: req.user.role,
+      summary: `${req.user.email} uploaded ${docQ.rows[0].document_name} on candidate's behalf`,
+      payload: { file: req.file.originalname, version: updated.rows[0].version },
+    });
+    res.json({ document: updated.rows[0] });
+  } catch (err) {
+    console.error('HR upload error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Candidate: upload (or re-upload) a document ───────────────────────────
 router.post('/documents/:docId/upload', candidateOnly, upload.single('file'), async (req, res) => {
   try {
@@ -284,6 +328,8 @@ router.get('/review-queue', hrAny, async (req, res) => {
       params.push(String(req.user.email || '').toLowerCase());
       scopeClause = `AND (LOWER(a.recruiter_email) = $${params.length} OR LOWER(a.secondary_recruiter_email) = $${params.length})`;
     }
+    // Return ALL documents in three buckets so the UI can render
+    // pending-upload / pending-review / reviewed tables independently.
     const rows = await pool.query(
       `SELECT d.*, a.application_id, a.candidate_name, a.candidate_email, a.status AS application_status,
               a.recruiter_email, a.secondary_recruiter_email,
@@ -291,11 +337,17 @@ router.get('/review-queue', hrAny, async (req, res) => {
        FROM candidate_documents d
        JOIN applications a ON a.id = d.application_id
        LEFT JOIN jobs j ON j.job_id = a.ats_job_id
-       WHERE d.status = 'uploaded' ${scopeClause}
-       ORDER BY d.uploaded_at ASC NULLS LAST`,
+       WHERE 1=1 ${scopeClause}
+       ORDER BY d.updated_at DESC NULLS LAST`,
       params
     );
-    res.json({ items: rows.rows });
+    const all = rows.rows;
+    res.json({
+      documents: all.filter((d) => d.status === 'uploaded'), // legacy shape
+      pending_upload: all.filter((d) => d.status === 'pending'),
+      pending_review: all.filter((d) => d.status === 'uploaded'),
+      reviewed: all.filter((d) => ['accepted', 'rejected'].includes(d.status)),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

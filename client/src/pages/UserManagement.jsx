@@ -12,6 +12,9 @@ const ROLES = [
   { value: 'hod', label: 'HOD', tone: 'info' },
 ];
 
+const APPLICANT_ROLES = ['applicant'];
+const isApplicant = (role) => APPLICANT_ROLES.includes(role);
+
 export default function UserManagement() {
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState('');
@@ -99,7 +102,17 @@ export default function UserManagement() {
   const [activeUsers, inactiveUsers] = useMemo(() => {
     const active = [];
     const inactive = [];
-    users.forEach((u) => {
+    users.filter(u => !isApplicant(u.role)).forEach((u) => {
+      if (u.is_active === false) inactive.push(u);
+      else active.push(u);
+    });
+    return [active, inactive];
+  }, [users]);
+
+  const [activeApplicants, inactiveApplicants] = useMemo(() => {
+    const active = [];
+    const inactive = [];
+    users.filter(u => isApplicant(u.role)).forEach((u) => {
       if (u.is_active === false) inactive.push(u);
       else active.push(u);
     });
@@ -145,6 +158,7 @@ export default function UserManagement() {
         meta={[
           { label: `${activeUsers.length} active`, tone: 'success' },
           { label: `${inactiveUsers.length} inactive` },
+          { label: `${activeApplicants.length} applicants`, tone: 'info' },
         ]}
         actions={<button onClick={openCreate} className="btn-primary">+ Add User</button>}
       />
@@ -177,6 +191,7 @@ export default function UserManagement() {
             columns={activeColumns}
             emptyMessage="No active users"
             exportFileName="users-active"
+            collapsible
           />
           <DataTable
             title="Inactive Users"
@@ -185,7 +200,30 @@ export default function UserManagement() {
             columns={inactiveColumns}
             emptyMessage="No inactive users"
             exportFileName="users-inactive"
+            collapsible
           />
+          {activeApplicants.length > 0 || inactiveApplicants.length > 0 ? (
+            <>
+              <DataTable
+                title="Active Applicants"
+                subtitle="Applicants with active accounts."
+                data={activeApplicants}
+                columns={activeColumns}
+                emptyMessage="No active applicants"
+                exportFileName="applicants-active"
+                collapsible
+              />
+              <DataTable
+                title="Inactive Applicants"
+                subtitle="Retained for audit history."
+                data={inactiveApplicants}
+                columns={inactiveColumns}
+                emptyMessage="No inactive applicants"
+                exportFileName="applicants-inactive"
+                collapsible
+              />
+            </>
+          ) : null}
         </div>
       )}
 

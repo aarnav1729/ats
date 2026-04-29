@@ -48,7 +48,18 @@ router.post('/verify-otp', async (req, res) => {
     const user = userResult.rows[0];
     const token = generateToken(user);
 
-    await logAudit({ actionBy: email, actionType: 'create', entityType: 'session', entityId: user.id });
+    // Capture login with IP + UA so we can stat per-user activity later.
+    await logAudit({
+      actionBy: email,
+      actionType: 'login',
+      entityType: 'session',
+      entityId: user.id,
+      metadata: {
+        role: user.role,
+        ip: req.headers['x-forwarded-for']?.split(',')[0] || req.socket?.remoteAddress || null,
+        user_agent: req.headers['user-agent'] || null,
+      },
+    });
 
     res.json({ token, user: { id: user.id, email: user.email, role: user.role, name: user.name } });
   } catch (err) {
@@ -61,15 +72,14 @@ router.post('/logout', authMiddleware, async (req, res) => {
   try {
     await logAudit({
       actionBy: req.user.email,
-      actionType: 'delete',
+      actionType: 'logout',
       entityType: 'session',
       entityId: req.user.id,
-      metadata: { reason: 'user_logout' },
+      metadata: { reason: 'user_logout', role: req.user.role },
     });
     res.json({ message: 'Logged out' });
   } catch (err) {
     console.error('Logout error:', err);
-    // Logout must always succeed from the client's perspective.
     res.json({ message: 'Logged out' });
   }
 });

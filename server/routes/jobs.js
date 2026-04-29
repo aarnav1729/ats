@@ -601,6 +601,14 @@ router.post('/', adminOrRecruiter, async (req, res) => {
       ]
     );
 
+    // Persist HR One single-id reference (Phase 0 column).
+    if (req.body.hr_one_job_id !== undefined) {
+      await client.query(
+        `UPDATE jobs SET hr_one_job_id = $1 WHERE id = $2`,
+        [String(req.body.hr_one_job_id || '').trim() || null, result.rows[0].id]
+      );
+    }
+
     await client.query('COMMIT');
 
     await logAudit({
@@ -735,9 +743,62 @@ router.put('/:id', adminOrRecruiter, async (req, res) => {
       ]
     );
 
+    // Persist HR One single-id reference (Phase 0 column).
+    if (req.body.hr_one_job_id !== undefined) {
+      await client.query(
+        `UPDATE jobs SET hr_one_job_id = $1 WHERE id = $2`,
+        [String(req.body.hr_one_job_id || '').trim() || null, req.params.id]
+      );
+    }
+
     await client.query('COMMIT');
 
     const updated = await fetchJob(pool, req.params.id);
+
+    // ── Side-effect: hold notification ──────────────────────────────────
+    // When the status transitions into on_hold, fan out the branded "Job on
+    // hold" email to primary + secondary recruiter + all hr_admin users with
+    // the recruiter-supplied reason. Done after COMMIT so we never block the
+    // status update on email delivery.
+    if (req.body.status === 'on_hold' && existing.status !== 'on_hold') {
+      try {
+        const { jobOnHoldEmail } = await import('../services/txEmails.js');
+        const { sendEmail } = await import('../services/email.js');
+        const { logTimeline } = await import('../services/timeline.js');
+        const reason = String(req.body.hold_reason || '').trim() || 'No reason provided';
+
+        const adminsQ = await pool.query(`SELECT email FROM users WHERE role = 'hr_admin' AND is_active = true`);
+        const recipients = Array.from(new Set([
+          updated.recruiter_email,
+          updated.secondary_recruiter_email,
+          updated.created_by,
+          ...adminsQ.rows.map((row) => row.email),
+        ].filter(Boolean)));
+
+        if (recipients.length) {
+          const html = jobOnHoldEmail({
+            jobTitle: updated.job_title,
+            jobId: updated.job_id,
+            reason,
+            placedBy: req.user.email,
+          });
+          sendEmail(recipients, `Job on hold — ${updated.job_title}`, html).catch(() => {});
+        }
+        await logTimeline({
+          entityType: 'job',
+          entityId: updated.job_id,
+          eventType: 'job.held',
+          actorEmail: req.user.email,
+          actorRole: req.user.role,
+          summary: `Job placed on hold — ${reason}`,
+          payload: { reason, recipients },
+          fromState: existing.status,
+          toState: 'on_hold',
+        });
+      } catch (notifyErr) {
+        console.error('Hold notification error:', notifyErr.message);
+      }
+    }
     await logAudit({
       actionBy: req.user.email,
       actionType: 'update',

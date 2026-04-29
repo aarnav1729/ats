@@ -202,11 +202,13 @@ export async function getTimeline(entityType, entityId, opts = {}) {
  * across an entity_type. Optional filter by from/to event types.
  */
 export async function stepTatAcrossEntity(entityType, opts = {}) {
-  const { fromEvent, toEvent, dateFrom, dateTo } = opts;
+  const { fromEvent, toEvent, dateFrom, dateTo, date_from, date_to } = opts;
+  const fromDate = dateFrom || date_from;
+  const toDate = dateTo || date_to;
   const params = [entityType];
   let clauses = 'entity_type = $1';
-  if (dateFrom) { params.push(dateFrom); clauses += ` AND occurred_at >= $${params.length}`; }
-  if (dateTo) { params.push(dateTo); clauses += ` AND occurred_at <= $${params.length}`; }
+  if (fromDate) { params.push(fromDate); clauses += ` AND occurred_at >= $${params.length}`; }
+  if (toDate) { params.push(toDate); clauses += ` AND occurred_at <= $${params.length}`; }
 
   let rows = await pool.query(
     `SELECT entity_id, event_type, from_state, to_state, occurred_at, duration_since_prev_seconds, hold_paused
@@ -219,8 +221,8 @@ export async function stepTatAcrossEntity(entityType, opts = {}) {
   if (rows.rows.length === 0) {
     const atParams = [entityType];
     let atClause = `entity_type = $1`;
-    if (dateFrom) { atParams.push(dateFrom); atClause += ` AND created_at >= $${atParams.length}`; }
-    if (dateTo) { atParams.push(dateTo); atClause += ` AND created_at <= $${atParams.length}`; }
+    if (fromDate) { atParams.push(fromDate); atClause += ` AND created_at >= $${atParams.length}`; }
+    if (toDate) { atParams.push(toDate); atClause += ` AND created_at <= $${atParams.length}`; }
     const audit = await pool.query(
       `SELECT
          entity_id,
