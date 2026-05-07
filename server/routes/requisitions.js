@@ -1234,11 +1234,11 @@ router.post('/', allowedRoles, async (req, res) => {
         const { requisitionRaisedAdminEmail, requisitionRaisedConfirmationEmail } = await import('../services/txEmails.js');
         const { sendEmail } = await import('../services/email.js');
 
-        // Admin alert (always — informs the HR admin team a new req exists)
+        // Admin alert (always  informs the HR admin team a new req exists)
         const adminEmails = hrAdmins.map((a) => a.email).filter(Boolean);
         if (adminEmails.length) {
           sendEmail(adminEmails,
-            `New requisition ${requisitionId} — ${payload.job_title}`,
+            `New requisition ${requisitionId}  ${payload.job_title}`,
             requisitionRaisedAdminEmail({
               requisitionId,
               raisedBy: req.user.email,

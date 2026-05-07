@@ -6,9 +6,9 @@ import { renderBrandedEmail, paragraph, detailTable, quoteBlock, formatIST } fro
 
 const APP = () => process.env.APP_URL || '';
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
 // Candidate-facing
-// ─────────────────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
 
 export function applicationReceivedEmail({ candidateName, jobTitle, applicationId }) {
   return renderBrandedEmail({
@@ -17,7 +17,8 @@ export function applicationReceivedEmail({ candidateName, jobTitle, applicationI
     bodyHtml: [
       paragraph(`Dear ${candidateName},`),
       paragraph(`Thank you for your interest in joining Premier Energies. We have received your application for the ${jobTitle} position and our recruiting team has begun the initial review.`),
-      paragraph(`You will hear from us once a hiring decision has been made for the next stage. In the meantime, you can track your application status anytime through the candidate portal.`),
+      paragraph(`Our review will consider your profile against the role requirements, interview plan, and current hiring priorities. If your background aligns, the next communication will include the stage, owner, and any preparation details required from you.`),
+      paragraph(`You can track your application status anytime through the candidate portal. Please keep your contact details current so that interview scheduling, document requests, and offer updates reach you without delay.`),
       paragraph(`We appreciate the time you have invested in applying with us.`),
     ].join(''),
     cta: { label: 'Track your application', href: `${APP()}/candidate` },
@@ -54,7 +55,7 @@ export function interviewScheduledEmail({ candidateName, jobTitle, roundLabel, s
         ['Interviewers', (interviewerNames || []).join(', ') || 'To be confirmed'],
         joinNote ? ['Joining instructions', joinNote] : null,
       ].filter(Boolean)),
-      paragraph(`If anything urgent comes up that prevents you from attending, please reply to this email so we can find a workable time.`),
+      paragraph(`Please review the meeting details carefully and join a few minutes early. If anything urgent prevents you from attending, reply to this email as soon as possible so the recruiting team can help with a revised schedule.`),
     ].join(''),
     cta: { label: 'View interview details', href: `${APP()}/candidate` },
     context: `Application · ${jobTitle}`,
@@ -69,6 +70,7 @@ export function interviewReminderEmail({ candidateName, jobTitle, roundLabel, sc
       paragraph(`Dear ${candidateName},`),
       paragraph(`This is a friendly reminder of your ${roundLabel} for the ${jobTitle} position scheduled at ${formatIST(scheduledAt)}.`),
       paragraph(`Please join a few minutes before the start time. If you experience any last-minute issue, reply to this thread and we will help.`),
+      paragraph(`Your interviewer will use the session to discuss your experience, role fit, availability, and any role-specific context that should be clarified before the next stage.`),
     ].join(''),
     cta: { label: 'Open candidate portal', href: `${APP()}/candidate` },
   });
@@ -95,7 +97,7 @@ export function ctcAcceptanceEmailV2({ candidateName, jobTitle, validityDays }) 
     bodyHtml: [
       paragraph(`Dear ${candidateName},`),
       paragraph(`We are pleased to share the proposed compensation structure for your offer for the ${jobTitle} position. Please review the breakdown carefully in the candidate portal.`),
-      paragraph(`This summary is valid for ${validityDays || 14} days from the date of this email. We are happy to discuss any aspect of the structure with you before you confirm.`),
+      paragraph(`This summary is valid for ${validityDays || 14} days from the date of this email. The portal will capture your acceptance, renegotiation request, or decline decision for audit and recruiter follow-up.`),
       paragraph(`Once you accept, we will move forward with the formal offer letter.`),
     ].join(''),
     cta: { label: 'Review compensation', href: `${APP()}/candidate` },
@@ -110,7 +112,7 @@ export function offerLetterReadyEmail({ candidateName, jobTitle }) {
     bodyHtml: [
       paragraph(`Dear ${candidateName},`),
       paragraph(`We are delighted to extend a formal offer for the ${jobTitle} position at Premier Energies. The letter is now available for your review and digital signature in the candidate portal.`),
-      paragraph(`Please take your time to read it through carefully. Once you sign and submit, your recruiter will be in touch to coordinate the joining formalities.`),
+      paragraph(`Please read the letter carefully, including compensation, designation, reporting location, and expected joining date. Once you sign and submit, your recruiter will coordinate the joining formalities and any remaining documentation.`),
     ].join(''),
     cta: { label: 'View and sign offer', href: `${APP()}/candidate` },
     context: `Application · ${jobTitle}`,
@@ -142,7 +144,7 @@ export function joiningReminderEmail({ candidateName, jobTitle, joiningDate }) {
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
 // Internal (recruiter / admin / approver / interviewer) facing
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -173,6 +175,7 @@ export function requisitionRaisedAdminEmail({ requisitionId, raisedBy, jobTitle,
     title: `New requisition raised - ${requisitionId}`,
     bodyHtml: [
       paragraph(`A new ${type === 'replacement' ? 'replacement' : 'new-hire'} requisition has been submitted and is awaiting approval.`),
+      paragraph(`Please review the business unit, role context, headcount request, and approval path before taking action. The ATS will preserve each decision in the requisition timeline.`),
       detailTable([
         ['Requisition', requisitionId],
         ['Position', jobTitle],
@@ -207,12 +210,13 @@ export function jobAssignedRecruiterEmail({ jobTitle, jobId, requisitionId, prim
     title: `New job assigned - ${jobTitle}`,
     bodyHtml: [
       paragraph(`The following job has been assigned to you for sourcing and pipeline management.`),
+      paragraph(`Please review the job setup, hiring flow, interview ownership, and source plan before adding candidates. Candidate movements and duplicate uploads will remain visible to admins.`),
       detailTable([
         ['Job ID', jobId],
         ['Position', jobTitle],
-        ['From requisition', requisitionId || '—'],
-        ['Primary recruiter', primary || '—'],
-        ['Secondary recruiter', secondary || '—'],
+        ['From requisition', requisitionId || ''],
+        ['Primary recruiter', primary || ''],
+        ['Secondary recruiter', secondary || ''],
       ]),
     ].join(''),
     cta: { label: 'Open job', href: `${APP()}/jobs/${jobId}` },
@@ -250,7 +254,7 @@ export function shortlistInterviewerEmail({ candidateName, jobTitle, roundLabel,
         ['Position', jobTitle],
         ['Round', roundLabel],
       ]),
-      paragraph(`Please review the profile and either suggest two interview slots or share initial feedback in the Interview Hub.`),
+      paragraph(`Please review the profile, resume, job context, and earlier timeline before suggesting interview slots or recording feedback in the Interview Hub.`),
     ].join(''),
     cta: { label: 'Open interview hub', href: `${APP()}/interviews` },
     context: `Application ${applicationId}`,

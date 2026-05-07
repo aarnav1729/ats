@@ -1,11 +1,11 @@
 /* ──────────────────────────────────────────────────────────────────────────
-   Design system v2 — layered on top of /styles/index.css.
+   Design system v2  layered on top of /styles/index.css.
    Adds: vibrant brand gradients, micro-animations, glassmorphism,
    premium hover states, and timeline/KPI primitives consumed by phase-1+ UIs.
    ────────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Premium gradients — used on hero strips, KPI cards, primary CTAs */
+  /* Premium gradients  used on hero strips, KPI cards, primary CTAs */
   --grad-brand: linear-gradient(135deg, #0b1d36 0%, #143464 45%, #0c8da3 100%);
   --grad-vibrant: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #ec4899 100%);
   --grad-success: linear-gradient(135deg, #047857 0%, #10b981 100%);
@@ -18,7 +18,7 @@
                radial-gradient(at 80% 0%, rgba(236,72,153,0.12) 0%, transparent 50%),
                radial-gradient(at 0% 100%, rgba(16,185,129,0.10) 0%, transparent 50%);
 
-  /* Status palette — semantic stage colours used by StatusPillV2 */
+  /* Status palette  semantic stage colours used by StatusPillV2 */
   --stage-queue:        #64748b;
   --stage-applied:      #0ea5e9;
   --stage-shortlisted:  #6366f1;
@@ -73,7 +73,7 @@
 .v2-float { animation: v2-float 3.6s ease-in-out infinite; }
 .v2-slide-in { animation: v2-slide-in-right 280ms cubic-bezier(.34,1.2,.64,1) both; }
 
-/* Parallax — applied to hero strip backgrounds */
+/* Parallax  applied to hero strip backgrounds */
 .v2-parallax {
   position: relative;
   isolation: isolate;
@@ -182,7 +182,7 @@
   margin-bottom: 8px;
 }
 
-/* ── Status pill v2 — clearer stage colour ──────────────────────────────── */
+/* ── Status pill v2  clearer stage colour ──────────────────────────────── */
 .v2-pill {
   display: inline-flex;
   align-items: center;
@@ -289,7 +289,7 @@
 }
 .v2-card-clickable { cursor: pointer; }
 
-/* ── Working modal — used to show TAT calculation provenance ───────────── */
+/* ── Working modal  used to show TAT calculation provenance ───────────── */
 .v2-working {
   background: #0b1d36;
   color: #cbd5e1;
@@ -359,7 +359,7 @@
   vertical-align: top;
 }
 
-/* ── Buttons v2 — primary CTA with sheen ────────────────────────────────── */
+/* ── Buttons v2  primary CTA with sheen ────────────────────────────────── */
 .v2-btn-primary {
   position: relative;
   background: var(--grad-brand);
@@ -402,7 +402,7 @@
 }
 .v2-btn-ghost:hover { background: var(--surface-muted); border-color: var(--line-strong); }
 
-/* Skeleton loader — soft shimmer block used everywhere we'd otherwise show a spinner */
+/* Skeleton loader  soft shimmer block used everywhere we'd otherwise show a spinner */
 @keyframes v2-skel {
   0% { background-position: 100% 50%; }
   100% { background-position: -100% 50%; }
@@ -416,7 +416,7 @@
 .v2-skel-line { height: 12px; margin: 6px 0; }
 .v2-skel-card { height: 96px; }
 
-/* Responsive table — wraps any <table> so it scrolls horizontally on small screens
+/* Responsive table  wraps any <table> so it scrolls horizontally on small screens
    without breaking column-width tuning. */
 .v2-table-wrap {
   overflow-x: auto;
@@ -451,15 +451,15 @@
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   v2.1 — Awwwards-tier visual layer.
+   v2.1  Awwwards-tier visual layer.
    New techniques: gradient borders (mask-composite), magnetic hover, conic
    spotlight, animated counters, depth shadows, glow, marquee, ticker, ring
    progress, hover-lift-rotate cards, subtle grain, scroll-triggered fades.
-   Kept tree-shakable: utilities only — no JS dependency.
+   Kept tree-shakable: utilities only  no JS dependency.
    ────────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Tighter contrast ramp — used for typography and borders on premium views */
+  /* Tighter contrast ramp  used for typography and borders on premium views */
   --ink-1: #050b18;
   --ink-2: #0f172a;
   --ink-3: #334155;
@@ -475,7 +475,7 @@
                  radial-gradient(ellipse 60% 50% at 20% 100%, rgba(16,185,129,0.18), transparent 60%);
   --grad-sunset: linear-gradient(135deg, #ff6b6b 0%, #f59e0b 35%, #ec4899 75%, #8b5cf6 100%);
 
-  /* Premium depth — layered shadows mimicking award-winning sites */
+  /* Premium depth  layered shadows mimicking award-winning sites */
   --depth-1: 0 1px 2px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.06);
   --depth-2: 0 4px 12px rgba(15,23,42,0.06), 0 12px 32px rgba(15,23,42,0.08);
   --depth-3: 0 12px 28px rgba(15,23,42,0.10), 0 32px 64px rgba(15,23,42,0.12);
@@ -505,7 +505,7 @@
   80% { transform: translate(1px, 1px); }
 }
 
-/* ── Gradient border (mask-composite trick — works in modern Chromium/Safari) */
+/* ── Gradient border (mask-composite trick  works in modern Chromium/Safari) */
 .v2-grad-border {
   position: relative;
   background: #fff;
@@ -530,7 +530,7 @@
   z-index: -1;
 }
 
-/* ── Magnetic CTA — exaggerated lift + glow on hover ──────────────────── */
+/* ── Magnetic CTA  exaggerated lift + glow on hover ──────────────────── */
 .v2-magnetic {
   transition: transform 320ms cubic-bezier(.34,1.56,.64,1), box-shadow 320ms ease;
   will-change: transform;
@@ -541,7 +541,7 @@
 }
 .v2-magnetic:active { transform: translateY(0) scale(0.99); }
 
-/* ── Conic spotlight wrapper — animated ring around a hero element ────── */
+/* ── Conic spotlight wrapper  animated ring around a hero element ────── */
 .v2-spotlight {
   position: relative;
   isolation: isolate;
@@ -566,7 +566,7 @@
   z-index: -1;
 }
 
-/* ── Aurora hero — used on Dashboard, Login, TAT Explorer ─────────────── */
+/* ── Aurora hero  used on Dashboard, Login, TAT Explorer ─────────────── */
 .v2-aurora {
   position: relative;
   isolation: isolate;
@@ -603,7 +603,7 @@
   animation: v2-count-up 480ms cubic-bezier(.34,1.2,.64,1) both;
 }
 
-/* ── Tilt-in — entrance for KPI rows ─────────────────────────────────── */
+/* ── Tilt-in  entrance for KPI rows ─────────────────────────────────── */
 .v2-tilt-in   { animation: v2-tilt-in 480ms cubic-bezier(.34,1.2,.64,1) both; }
 .v2-tilt-in-2 { animation: v2-tilt-in 480ms 80ms cubic-bezier(.34,1.2,.64,1) both; }
 .v2-tilt-in-3 { animation: v2-tilt-in 480ms 160ms cubic-bezier(.34,1.2,.64,1) both; }
@@ -624,7 +624,7 @@
   border-radius: inherit;
 }
 
-/* ── Marquee row — for status rotators / live tickers ────────────────── */
+/* ── Marquee row  for status rotators / live tickers ────────────────── */
 .v2-marquee {
   overflow: hidden;
   position: relative;
@@ -680,7 +680,7 @@
   font-feature-settings: 'tnum';
 }
 
-/* ── 3D card hover — used for stage cards / KPI primary ──────────────── */
+/* ── 3D card hover  used for stage cards / KPI primary ──────────────── */
 .v2-tilt {
   transition: transform 320ms cubic-bezier(.34,1.56,.64,1), box-shadow 320ms ease;
   transform-style: preserve-3d;
@@ -691,7 +691,7 @@
   box-shadow: var(--depth-3);
 }
 
-/* ── Section divider — gradient hairline ─────────────────────────────── */
+/* ── Section divider  gradient hairline ─────────────────────────────── */
 .v2-rule {
   height: 1px;
   border: 0;
@@ -763,7 +763,7 @@ a:focus-visible,
   border-radius: 8px;
 }
 
-/* ── Hover-glow utility — drop on any element to add a soft glow ────── */
+/* ── Hover-glow utility  drop on any element to add a soft glow ────── */
 .v2-hover-glow { transition: box-shadow var(--motion-base), transform var(--motion-base); }
 .v2-hover-glow:hover { box-shadow: var(--depth-glow-indigo); transform: translateY(-1px); }
 
@@ -804,7 +804,7 @@ a:focus-visible,
   border-radius: 999px;
 }
 
-/* ── Input field upgrade — used by adding .v2-input class ─────────────── */
+/* ── Input field upgrade  used by adding .v2-input class ─────────────── */
 .v2-input {
   width: 100%;
   padding: 11px 14px;
@@ -852,6 +852,6 @@ a:focus-visible,
 .v2-tone-danger  { color: #b91c1c; background: #fee2e2; }
 .v2-tone-info    { color: #1e40af; background: #dbeafe; }
 
-/* ── Section reveal — generic fade-up driven by data-attribute ────────── */
+/* ── Section reveal  generic fade-up driven by data-attribute ────────── */
 [data-reveal] { opacity: 0; transform: translateY(10px); transition: opacity .5s ease, transform .5s ease; }
 [data-reveal].in { opacity: 1; transform: translateY(0); }

@@ -93,6 +93,7 @@ export default function AuditDeck() {
   const [search, setSearch] = useState('');
 
   const [stats, setStats] = useState(null);
+  const [loginActivity, setLoginActivity] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -121,8 +122,12 @@ export default function AuditDeck() {
     try { const r = await auditAPI.stats(); setStats(r.data); } catch {}
   };
 
+  const loadLoginActivity = async () => {
+    try { const r = await auditAPI.loginActivity(); setLoginActivity(r.data); } catch {}
+  };
+
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [page, actionType, entityType, actor, dateFrom, dateTo]);
-  useEffect(() => { loadStats(); }, []);
+  useEffect(() => { loadStats(); loadLoginActivity(); }, []);
 
   const exportJson = async () => {
     try {
@@ -183,24 +188,148 @@ export default function AuditDeck() {
           <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
             <KPI eyebrow="Logins (window)" tone="brand" value={stats.total_logins || 0} animationDelay={0} foot="OTP-verified sessions" />
             <KPI eyebrow="Logins last 24h" tone="vibrant" value={stats.logins_last_24h || 0} animationDelay={60} foot="Daily activity" />
-            <KPI eyebrow="Top action" tone="success" value={stats.actions_by_type?.[0]?.action_type || '—'} foot={`${stats.actions_by_type?.[0]?.count || 0} times`} animationDelay={120} />
-            <KPI eyebrow="Most active user" tone="warn" value={(stats.actions_by_user?.[0]?.action_by || '—').split('@')[0]} foot={`${stats.actions_by_user?.[0]?.count || 0} actions`} animationDelay={180} />
+            <KPI eyebrow="Top action" tone="success" value={stats.actions_by_type?.[0]?.action_type || ''} foot={`${stats.actions_by_type?.[0]?.count || 0} times`} animationDelay={120} />
+            <KPI eyebrow="Most active user" tone="warn" value={(stats.actions_by_user?.[0]?.action_by || '').split('@')[0]} foot={`${stats.actions_by_user?.[0]?.count || 0} actions`} animationDelay={180} />
           </div>
-          {/* Login frequency table */}
-          {stats.logins_by_user?.length > 0 && (
+          {/* Login frequency per user - 7 days */}
+          {stats.session_frequency_7d?.length > 0 && (
             <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 v2-fade-up">
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 mb-2">Login frequency by user</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 mb-2">Login frequency - last 7 days</p>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {stats.logins_by_user.slice(0, 9).map((u) => (
+                {stats.session_frequency_7d.slice(0, 9).map((u) => (
                   <div key={u.action_by} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-900 truncate">{u.action_by}</p>
-                      <p className="text-[11px] text-slate-500 truncate">last: {u.last_login ? fmtIST(u.last_login) : '—'}</p>
+                      <p className="text-[11px] text-slate-500 truncate">{u.login_count} logins</p>
                     </div>
-                    <span className="ml-2 inline-flex items-center justify-center rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-800 font-mono">{u.count}×</span>
+                    <span className="ml-2 inline-flex items-center justify-center rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-800 font-mono">{u.login_count}×</span>
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* DAU - last 14 days bar chart */}
+          {stats.dau_logins?.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 v2-fade-up">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 mb-2">Daily Active Users - last 14 days</p>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 64 }}>
+                {stats.dau_logins.slice(0, 14).reverse().map((d) => {
+                  const maxUsers = Math.max(...stats.dau_logins.map(r => Number(r.users)), 1);
+                  const heightPct = (Number(d.users) / maxUsers) * 100;
+                  return (
+                    <div key={d.day} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <div style={{ width: '100%', background: 'var(--accent-blue)', borderRadius: 3, height: `${heightPct}%`, minHeight: 4 }} title={`${d.users} users`} />
+                      <span style={{ fontSize: 9, color: 'var(--text-faint)' }}>{String(d.day).slice(5, 10)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Most active recruiters - last 7 days */}
+          {loginActivity && loginActivity.users.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 v2-fade-up">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 mb-2">Most active recruiters (actions last 7 days)</p>
+              <div className="space-y-2">
+                {loginActivity.users
+                  .filter(u => u.total_actions > 0)
+                  .sort((a, b) => b.total_actions - a.total_actions)
+                  .slice(0, 8)
+                  .map((u) => (
+                    <div key={u.email} className="flex items-center justify-between" style={{ fontSize: 13 }}>
+                      <span style={{ color: 'var(--text-body)' }}>{u.name || u.email}</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{u.total_actions} actions</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Top actions breakdown */}
+          {stats.most_common_actions?.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 v2-fade-up">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 mb-2">Top actions breakdown</p>
+              <div className="space-y-1">
+                {stats.most_common_actions.slice(0, 8).map((a, i) => {
+                  const total = stats.most_common_actions.reduce((s, x) => s + Number(x.count), 0);
+                  const pct = total > 0 ? Math.round((Number(a.count) / total) * 100) : 0;
+                  return (
+                    <div key={a.action_type} style={{ fontSize: 12 }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span style={{ color: 'var(--text-body)', fontWeight: 500 }}>{a.action_type}</span>
+                        <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{a.count} <span style={{ color: 'var(--text-faint)' }}>({pct}%)</span></span>
+                      </div>
+                      <div style={{ height: 4, background: 'var(--surface-muted)', borderRadius: 2 }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: 'var(--accent-blue)', borderRadius: 2 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Login activity table */}
+          {loginActivity && loginActivity.users.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 v2-fade-up">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 mb-3">Login activity stats</p>
+              <div className="overflow-x-auto">
+                <table style={{ width: '100%', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--line-subtle)' }}>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', color: 'var(--text-faint)', fontWeight: 600 }}>Name</th>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', color: 'var(--text-faint)', fontWeight: 600 }}>Email</th>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', color: 'var(--text-faint)', fontWeight: 600 }}>Role</th>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', color: 'var(--text-faint)', fontWeight: 600 }}>Last Login</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', color: 'var(--text-faint)', fontWeight: 600 }}>Total Logins</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', color: 'var(--text-faint)', fontWeight: 600 }}>Actions</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', color: 'var(--text-faint)', fontWeight: 600 }}>Today</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loginActivity.users.map((u) => (
+                      <tr key={u.email} style={{ borderBottom: '1px solid var(--line-subtle)' }}>
+                        <td style={{ padding: '6px 10px', fontWeight: 500 }}>{u.name || '-'}</td>
+                        <td style={{ padding: '6px 10px', color: 'var(--text-body)' }}>{u.email}</td>
+                        <td style={{ padding: '6px 10px', color: 'var(--text-body)' }}>{u.role || '-'}</td>
+                        <td style={{ padding: '6px 10px', color: 'var(--text-body)', fontSize: 11 }}>{u.last_login ? fmtIST(u.last_login) : '-'}</td>
+                        <td style={{ padding: '6px 10px', fontWeight: 600, textAlign: 'right' }}>{u.total_logins}</td>
+                        <td style={{ padding: '6px 10px', fontWeight: 600, textAlign: 'right' }}>{u.total_actions}</td>
+                        <td style={{ padding: '6px 10px', fontWeight: 600, textAlign: 'right' }}>{u.actions_today}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Average daily active users */}
+          {stats.dau_logins?.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 v2-fade-up">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 mb-2">Average daily active users</p>
+              <p style={{ fontSize: 28, fontWeight: 700, color: 'var(--accent-blue)' }}>
+                {Math.round(stats.dau_logins.reduce((s, d) => s + Number(d.users), 0) / Math.max(stats.dau_logins.length, 1))}
+              </p>
+              <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>over last {stats.dau_logins.length} days</p>
+            </div>
+          )}
+
+          {/* Session duration summary */}
+          {stats.avg_session_duration_secs > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 v2-fade-up">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 mb-2">Avg session duration</p>
+              <p style={{ fontSize: 28, fontWeight: 700, color: 'var(--accent-blue)' }}>
+                {(() => {
+                  const secs = stats.avg_session_duration_secs;
+                  if (secs < 60) return `${secs}s`;
+                  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+                  return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
+                })()}
+              </p>
+              <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>across {stats.session_stats?.length || 0} users</p>
             </div>
           )}
         </>

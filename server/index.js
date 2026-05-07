@@ -221,7 +221,12 @@ function getOllamaPath() {
     }
 
     try {
-      execSync("ollama --version", { stdio: "ignore" });
+      const isWindows = process.platform === "win32";
+      if (isWindows) {
+        execSync("ollama --version", { stdio: "ignore", shell: true });
+      } else {
+        execSync("ollama --version", { stdio: "ignore" });
+      }
       return "ollama";
     } catch {
       return null;
@@ -369,12 +374,19 @@ function startOllamaService() {
       return;
     }
 
-    const ollamaProcess = spawn(command, ["serve"], {
+    const isWindows = process.platform === "win32";
+    const spawnOpts = {
       detached: true,
       stdio: "ignore",
       windowsHide: true,
-      shell: false,
-    });
+    };
+
+    if (isWindows) {
+      spawnOpts.shell = true;
+      spawnOpts.windowsVerbatimArguments = true;
+    }
+
+    const ollamaProcess = spawn(command, ["serve"], spawnOpts);
 
     ollamaProcess.on("error", (err) => {
       console.error("❌ Failed to start Ollama:", err.message);
@@ -408,11 +420,18 @@ async function pullModel() {
       return;
     }
 
-    const pullProcess = spawn(command, ["pull", OLLAMA_MODEL], {
+    const isWindows = process.platform === "win32";
+    const spawnOpts = {
       stdio: "inherit",
       windowsHide: false,
-      shell: false,
-    });
+    };
+
+    if (isWindows) {
+      spawnOpts.shell = true;
+      spawnOpts.windowsVerbatimArguments = true;
+    }
+
+    const pullProcess = spawn(command, ["pull", OLLAMA_MODEL], spawnOpts);
 
     pullProcess.on("error", (err) => {
       console.error("❌ Failed to pull model:", err.message);
@@ -476,7 +495,7 @@ async function setupOllama() {
   if (!modelExists) {
     const fallbackModel = await getFirstAvailableModel();
     if (fallbackModel) {
-      console.log(`📦 Model ${OLLAMA_MODEL} not found. Auto-detected '${fallbackModel}' — using it.`);
+      console.log(`📦 Model ${OLLAMA_MODEL} not found. Auto-detected '${fallbackModel}'  using it.`);
       activeModel = fallbackModel;
     } else {
       console.log(`📦 Model ${OLLAMA_MODEL} not found locally, and no other models available.`);
@@ -513,7 +532,7 @@ async function start() {
     await ensureSchema();
     console.log("✅ Database schema ready");
 
-    // 3. Setup Ollama (AI Service) — non-blocking; system runs without it.
+    // 3. Setup Ollama (AI Service)  non-blocking; system runs without it.
     if (process.env.SKIP_OLLAMA === "1") {
       console.log("⏭️  Skipping Ollama setup (SKIP_OLLAMA=1).");
     } else {

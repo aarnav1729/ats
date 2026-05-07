@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { applicationsAPI, candidatesAPI, interviewsAPI, jobsAPI, mastersAPI, orgAPI, candidatePortalAPI } from '../services/api';
+import { applicationsAPI, candidatesAPI, interviewsAPI, jobsAPI, mastersAPI, orgAPI, candidatePortalAPI, ctcBreakupAPI } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import EmailAutocompleteTags from '../components/EmailAutocompleteTags';
 import InfoTip from '../components/InfoTip';
 import CTCPasteTable from '../components/CTCPasteTable';
+import RichClipboardEditor from '../components/RichClipboardEditor';
+import CtcAdminReviewModal from '../components/CtcAdminReviewModal';
 import Timeline from '../components/Timeline';
 import haptic from '../utils/haptic';
 
@@ -89,6 +91,54 @@ function renderInlinePreview(filePath, title) {
   return <iframe src={filePath} title={title} className="h-[28rem] w-full rounded-2xl border border-gray-200 bg-white" />;
 }
 
+function normalizeJsonObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function normalizeJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function getJobRoundDefaults(application) {
+  const assignments = normalizeJsonObject(application?.job_interviewer_emails);
+  const flow = normalizeJsonArray(application?.job_hiring_flow);
+  const assignmentRoundCount = Object.keys(assignments).reduce((max, key) => {
+    const number = Number(String(key).replace(/^Round/i, ''));
+    return Number.isInteger(number) && number > 0 ? Math.max(max, number) : max;
+  }, 0);
+  const flowRoundCount = flow.filter((stage) => /interview|round/i.test(String(stage || ''))).length;
+  const roundCount = Math.max(assignmentRoundCount, flowRoundCount, 1);
+  const interviewers = Array.from({ length: 3 }, (_, index) => {
+    const roundNumber = index + 1;
+    const raw = assignments[roundNumber]
+      ?? assignments[String(roundNumber)]
+      ?? assignments[`Round${roundNumber}`]
+      ?? [];
+    return (Array.isArray(raw) ? raw : [raw])
+      .filter(Boolean)
+      .map((email) => ({ label: email, email, source: 'job' }));
+  });
+  return { roundCount, interviewers };
+}
+
 function buildRoundPlanFromApplication(application) {
   const normalized = Array.from({ length: 3 }, () => []);
   const storedRounds = Array.isArray(application?.interviewers) ? application.interviewers : [];
@@ -103,6 +153,11 @@ function buildRoundPlanFromApplication(application) {
       }),
     };
   }
+
+  const jobDefaults = getJobRoundDefaults(application);
+  jobDefaults.interviewers.forEach((items, index) => {
+    normalized[index] = items;
+  });
 
   const tasks = Array.isArray(application?.interview_feedback) ? application.interview_feedback : [];
   let highestRound = 0;
@@ -121,7 +176,7 @@ function buildRoundPlanFromApplication(application) {
   });
 
   return {
-    no_of_rounds: String(Math.max(Number(application?.no_of_rounds || highestRound || 1), 1)),
+    no_of_rounds: String(Math.max(Number(application?.no_of_rounds || highestRound || jobDefaults.roundCount || 1), 1)),
     interviewers: normalized,
   };
 }
@@ -176,12 +231,12 @@ function WorkflowHero({ application, nextOwner, primaryAction }) {
           <div className="mt-5 fact-grid">
             <div className="fact-card">
               <p className="workspace-kicker">Candidate Contact</p>
-              <p className="mt-2 text-sm font-semibold text-slate-900">{application?.candidate_email || 'Email not captured'}</p>
-              <p className="mt-1 text-sm text-slate-500">{application?.candidate_phone || 'Phone not captured'}</p>
+              <a href={`mailto:${application?.candidate_email}`} className="mt-2 text-sm font-semibold text-indigo-600 hover:text-indigo-800 block">{application?.candidate_email || 'Email not captured'}</a>
+              <a href={`tel:${application?.candidate_phone}`} className="mt-1 text-sm text-slate-500 hover:text-slate-700 block">{application?.candidate_phone || 'Phone not captured'}</a>
             </div>
             <div className="fact-card">
               <p className="workspace-kicker">Recruiter Owner</p>
-              <p className="mt-2 text-sm font-semibold text-slate-900">{application?.recruiter_email || 'Unassigned'}</p>
+              <a href={`mailto:${application?.recruiter_email}`} className="mt-2 text-sm font-semibold text-indigo-600 hover:text-indigo-800 block">{application?.recruiter_email || 'Unassigned'}</a>
               <p className="mt-1 text-sm text-slate-500">{application?.created_by || 'Creator not captured'}</p>
             </div>
           </div>
@@ -194,32 +249,29 @@ function WorkflowHero({ application, nextOwner, primaryAction }) {
 function StageRail({ status }) {
   const progress = getWorkflowProgress(status);
   return (
-    <div className="workspace-card animate-fade-in-up stagger-1">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="workspace-kicker">Process Map</p>
-          <h2 className="section-title mt-2">Hiring progression at a glance</h2>
-        </div>
-        <span className="utility-chip">Live status · {status || 'Unknown'}</span>
+    <div className="bg-white rounded-xl border border-gray-200 p-4 mt-4">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Pipeline</p>
+        <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">{status || 'Unknown'}</span>
       </div>
-      <div className="workflow-stage-rail mt-5">
+      <div className="flex gap-2 overflow-x-auto pb-2">
         {progress.map((lane) => (
           <div
             key={lane.key}
-            className={`workflow-stage-card ${
+            className={`flex-shrink-0 px-3 py-2 rounded-lg border ${
               lane.state === 'active'
-                ? 'is-active'
+                ? 'border-indigo-300 bg-indigo-50'
                 : lane.state === 'done'
-                  ? 'is-done'
-                  : ''
+                  ? 'border-green-200 bg-green-50'
+                  : 'border-gray-200 bg-gray-50'
             }`}
           >
-            <p className="workspace-kicker">{lane.state === 'active' ? 'Active lane' : lane.state === 'done' ? 'Completed' : 'Up next'}</p>
-            <p className="mt-2 text-sm font-semibold text-gray-900">{lane.label}</p>
-            <p className="mt-1 text-sm leading-6 text-gray-600">{lane.description}</p>
-            <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
-              {lane.state === 'active' ? lane.currentStatus : lane.state}
+            <p className={`text-[10px] font-semibold uppercase ${
+              lane.state === 'active' ? 'text-indigo-600' : lane.state === 'done' ? 'text-green-600' : 'text-gray-500'
+            }`}>
+              {lane.state === 'active' ? '● Active' : lane.state === 'done' ? '✓ Done' : '○'}
             </p>
+            <p className="mt-1 text-xs font-medium text-gray-900 whitespace-nowrap">{lane.label}</p>
           </div>
         ))}
       </div>
@@ -258,6 +310,19 @@ export default function ApplicationWorkflow() {
   const [cxoEmail, setCxoEmail] = useState('');
   const [ctcEmailBody, setCtcEmailBody] = useState('');
   const [secondaryRecruiterEmail, setSecondaryRecruiterEmail] = useState('');
+  const [ctcBreakups, setCtcBreakups] = useState([]);
+  const [ctcComparisons, setCtcComparisons] = useState([]);
+  // CTC review state - R2 clearance + HR admin all-view modal trigger.
+  const [ctcAdminModalOpen, setCtcAdminModalOpen] = useState(false);
+  const [r2Notes, setR2Notes] = useState('');
+  const [r2Busy, setR2Busy] = useState(false);
+  const [ctcBreakupLoading, setCtcBreakupLoading] = useState(false);
+  const [ctcBreakupHtml, setCtcBreakupHtml] = useState('');
+  const [ctcBreakupText, setCtcBreakupText] = useState('');
+  const [ctcBreakupAttachment, setCtcBreakupAttachment] = useState(null);
+  const [ctcComparisonHtml, setCtcComparisonHtml] = useState('');
+  const [ctcComparisonText, setCtcComparisonText] = useState('');
+  const [ctcComparisonAttachment, setCtcComparisonAttachment] = useState(null);
   const [disposition, setDisposition] = useState({
     target_job_id: '',
     ban_scope: 'global',
@@ -316,6 +381,10 @@ export default function ApplicationWorkflow() {
     const tasks = Array.isArray(application?.interview_feedback) ? application.interview_feedback : [];
     return tasks.find((task) => Number(task.requested_additional_rounds || 0) > 0) || null;
   }, [application?.interview_feedback]);
+  const effectiveSecondaryRecruiterEmail = secondaryRecruiterEmail
+    || application?.secondary_recruiter_email
+    || application?.job_secondary_recruiter_email
+    || '';
   const primaryAction = useMemo(() => getPrimaryWorkflowAction(application), [application]);
   const secondaryActions = useMemo(() => getSecondaryWorkflowActions(application), [application]);
   const needsInterviewPlanning = useMemo(
@@ -361,6 +430,65 @@ export default function ApplicationWorkflow() {
     } catch { /* clearance may not exist yet */ }
   };
 
+  const loadCtcBreakups = async (appId) => {
+    try {
+      const res = await ctcBreakupAPI.all(appId || id);
+      setCtcBreakups(res.data?.breakups || []);
+      setCtcComparisons(res.data?.comparisons || []);
+    } catch { /* breakups may not exist yet */ }
+  };
+
+  const handleSendCtcBreakup = async () => {
+    if (!ctcBreakupHtml.trim()) {
+      toast.error('Please enter the CTC breakup HTML table');
+      return;
+    }
+    try {
+      setCtcBreakupLoading(true);
+      const formData = new FormData();
+      formData.append('breakup_html', ctcBreakupHtml);
+      formData.append('breakup_text', ctcBreakupText || ctcBreakupHtml.replace(/<[^>]*>/g, '').trim());
+      if (ctcBreakupAttachment) formData.append('attachment', ctcBreakupAttachment);
+      await ctcBreakupAPI.setBreakup(application.id, formData);
+      toast.success('CTC breakup sent to candidate for signature');
+      setCtcBreakupAttachment(null);
+      loadCtcBreakups(application.id);
+      refresh();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to send CTC breakup');
+    } finally {
+      setCtcBreakupLoading(false);
+    }
+  };
+
+  const handleSendCtcComparison = async () => {
+    if (!ctcComparisonHtml.trim()) {
+      toast.error('Please enter the CTC comparison HTML table');
+      return;
+    }
+    if (!effectiveSecondaryRecruiterEmail.trim()) {
+      toast.error('Assign or enter recruiter 2 before sending');
+      return;
+    }
+    try {
+      setCtcBreakupLoading(true);
+      const formData = new FormData();
+      formData.append('comparison_html', ctcComparisonHtml);
+      formData.append('comparison_text', ctcComparisonText || ctcComparisonHtml.replace(/<[^>]*>/g, '').trim());
+      formData.append('secondary_recruiter_email', effectiveSecondaryRecruiterEmail);
+      if (ctcComparisonAttachment) formData.append('attachment', ctcComparisonAttachment);
+      await ctcBreakupAPI.setComparison(application.id, formData);
+      toast.success('CTC comparison sent to recruiter 2');
+      setCtcComparisonAttachment(null);
+      loadCtcBreakups(application.id);
+      refresh();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to send CTC comparison');
+    } finally {
+      setCtcBreakupLoading(false);
+    }
+  };
+
   const refresh = async () => {
     const res = await applicationsAPI.get(id);
     setApplication(res.data);
@@ -382,8 +510,9 @@ export default function ApplicationWorkflow() {
         const items = Array.isArray(reasonsRes.data) ? reasonsRes.data : reasonsRes.data?.items || reasonsRes.data?.data || [];
         setRejectionReasons(items.filter((item) => item.active_flag !== false));
         setOpenJobs((jobsRes.data?.jobs || []).filter((job) => String(job.job_id) !== String(appRes.data?.ats_job_id)));
-        setSecondaryRecruiterEmail(appRes.data?.secondary_recruiter_email || '');
+        setSecondaryRecruiterEmail(appRes.data?.secondary_recruiter_email || appRes.data?.job_secondary_recruiter_email || '');
         loadClearance(id);
+        loadCtcBreakups(id);
       } catch (err) {
         const detail = err?.response?.data?.error || err?.message || 'Unknown error';
         console.error('Candidate workflow load error:', err);
@@ -634,6 +763,7 @@ export default function ApplicationWorkflow() {
         ctc_text: ctcTable?.text || '',
         aop_inline: aopInline,
         aop_exceeded_amount: aopInline ? 0 : Number(aopExceededAmount) || 0,
+        secondary_recruiter_email: effectiveSecondaryRecruiterEmail || undefined,
       });
       haptic.success();
       toast.success('Clearance submitted for secondary review');
@@ -750,7 +880,7 @@ export default function ApplicationWorkflow() {
 
   const openSchedulingWorkspace = () => {
     haptic.light();
-    navigate(`/applications/${application.id}/schedule`);
+    navigate(`/applications/${application.id}/workflow`);
   };
 
   if (loading) {
@@ -813,17 +943,151 @@ export default function ApplicationWorkflow() {
       <WorkflowHero application={application} nextOwner={nextOwner} primaryAction={primaryAction} />
       <StageRail status={application.status} />
 
+      {/* Action Center - Shows primary action based on status */}
+      <div className="mt-6 mb-4">
+        {application.status === 'OfferInProcess' && (
+          <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-2xl border border-indigo-200 p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Next Step</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">Finalize salary, send offer letter</p>
+                <p className="mt-1 text-sm text-gray-500">Mark as "Offer Released" when candidate has verbally accepted</p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <button type="button" onClick={() => handleTransition('Offered')} disabled={actionLoading === 'Offered'} className="btn-primary whitespace-nowrap">
+                  {actionLoading === 'Offered' ? 'Processing...' : 'Mark Offer Released'}
+                </button>
+                <button type="button" onClick={() => handleTransition('OfferRejected')} disabled={actionLoading === 'OfferRejected'} className="text-xs text-red-600 hover:text-red-800 font-medium">
+                  Not Moving Forward
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {application.status === 'Selected' && (
+          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl border border-emerald-200 p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">Start Offer Process</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">Collect documents, prepare CTC</p>
+                <p className="mt-1 text-sm text-gray-500">Documents needed before creating offer letter</p>
+              </div>
+              <button type="button" onClick={() => handleTransition('DocumentsInProgress')} className="btn-primary whitespace-nowrap">
+                Start Document Collection
+              </button>
+            </div>
+          </div>
+        )}
+        {application.status === 'DocumentsInProgress' && (
+          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl border border-emerald-200 p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">Document Collection</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">{application.candidate_documents?.filter(d => d.status === 'accepted').length || 0} of {application.candidate_documents?.length || 0} documents cleared</p>
+                <p className="mt-1 text-sm text-gray-500">Upload accepted documents to candidate portal</p>
+              </div>
+              <button type="button" onClick={() => handleTransition('DocumentsCleared')} className="btn-primary whitespace-nowrap">
+                Mark Documents Cleared
+              </button>
+            </div>
+          </div>
+        )}
+        {['InQueue', 'Applied'].includes(application.status) && (
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl border border-amber-200 p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-amber-600">HR Screening</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">Review profile, decide on next steps</p>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => handleTransition(application.status === 'InQueue' ? 'Applied' : 'Shortlisted')} className="btn-primary whitespace-nowrap">
+                  {application.status === 'InQueue' ? 'Start Screening' : 'Shortlist'}
+                </button>
+                <button type="button" onClick={() => setShowRejectModal(true)} className="btn-secondary text-red-600 border-red-200 hover:bg-red-50">
+                  Reject
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {application.status === 'Shortlisted' && application.no_of_rounds == 0 && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-200 p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Plan Interview</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">Set rounds, assign interviewers</p>
+              </div>
+              <button type="button" onClick={() => setShowPlanRounds(true)} className="btn-primary whitespace-nowrap">
+                Plan Interview Process
+              </button>
+            </div>
+          </div>
+        )}
+        {application.status === 'AwaitingHODResponse' && (
+          <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-2xl border border-purple-200 p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-purple-600">HOD Review</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">Waiting for HOD approval</p>
+                <p className="mt-1 text-sm text-gray-500">HOD needs to review and approve scheduling</p>
+              </div>
+              <button type="button" onClick={() => setShowAssignHod(true)} className="btn-primary whitespace-nowrap">
+                {application.hod_email ? 'Remind HOD' : 'Assign HOD'}
+              </button>
+            </div>
+          </div>
+        )}
+        {application.status === 'AwaitingInterviewScheduling' && (
+          <div className="bg-gradient-to-r from-cyan-50 to-blue-50 rounded-2xl border border-cyan-200 p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-cyan-600">Scheduling</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">Propose time slots to candidate</p>
+              </div>
+              <button type="button" onClick={() => navigate(`/interviews?application_id=${application.id}&tab=Needs%20Scheduling`)} className="btn-primary whitespace-nowrap">
+                Open Scheduler
+              </button>
+            </div>
+          </div>
+        )}
+        {['Round1', 'Round2', 'Round3'].includes(application.status) && (
+          <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-2xl border border-violet-200 p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-violet-600">Interview {application.status}</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">Collect feedback, manage schedule</p>
+              </div>
+              <button type="button" onClick={() => navigate(`/interviews?application_id=${application.id}&tab=Scheduled`)} className="btn-primary whitespace-nowrap">
+                Open Interview Panel
+              </button>
+            </div>
+          </div>
+        )}
+        {application.status === 'AwaitingFeedback' && (
+          <div className="bg-gradient-to-r from-rose-50 to-pink-50 rounded-2xl border border-rose-200 p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-rose-600">Pending Feedback</p>
+                <p className="mt-1 text-lg font-semibold text-gray-900">Interviewer feedback not yet submitted</p>
+              </div>
+              <button type="button" onClick={() => navigate(`/interviews?application_id=${application.id}&tab=Scheduled`)} className="btn-primary whitespace-nowrap">
+                Remind Interviewer
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="workboard-layout">
         <aside className="workboard-lane workboard-lane-primary">
           <section className="workspace-card panel-hover">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="section-title">Candidate Dossier</h2>
-                <p className="mt-1 text-sm text-gray-500">Context, candidate facts, and the primary review packet in one left rail.</p>
               </div>
               {application.resume_path && (
                 <a href={application.resume_path} target="_blank" rel="noreferrer" className="btn-secondary">
-                  Open Resume
+                  Resume
                 </a>
               )}
             </div>
@@ -842,12 +1106,22 @@ export default function ApplicationWorkflow() {
                 ['Education', application.education_level || application.education_other || '-'],
                 ['Application Status', application.status],
                 ['No. of Rounds', application.no_of_rounds || '-'],
-              ].map(([label, value]) => (
-                <div key={label} className="fact-card">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">{label}</p>
-                  <p className="mt-2 text-sm font-medium text-gray-900">{value || '-'}</p>
-                </div>
-              ))}
+              ].map(([label, value]) => {
+                const isEmail = label === 'Email' && value;
+                const isPhone = label === 'Phone' && value;
+                return (
+                  <div key={label} className="fact-card">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">{label}</p>
+                    {isEmail ? (
+                      <a href={`mailto:${value}`} className="mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-800">{value || '-'}</a>
+                    ) : isPhone ? (
+                      <a href={`tel:${value}`} className="mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-800">{value || '-'}</a>
+                    ) : (
+                      <p className="mt-2 text-sm font-medium text-gray-900">{value || '-'}</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             <div className="mt-6">
@@ -873,27 +1147,18 @@ export default function ApplicationWorkflow() {
             </div>
           </section>
 
-          <section className="workspace-card panel-hover">
-            <div className="flex items-center gap-2">
-              <h2 className="section-title">Routing Snapshot</h2>
-              <InfoTip text="Use this summary rail to understand who owns the current motion and what action desk should open next." />
-            </div>
-            <div className="mt-4 decision-stack">
-              <div className="decision-card decision-card-strong">
-                <p className="workspace-kicker">Recommended next action</p>
-                <p className="mt-2 text-base font-semibold text-slate-950">{primaryAction?.label || 'Monitor current owner activity'}</p>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{getStatusMeta(application.status).summary}</p>
+          <section className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Owner</p>
+                <p className="mt-1 text-sm font-semibold text-gray-900">{nextOwner || getStatusMeta(application.status).owner}</p>
               </div>
-              <div className="fact-grid">
-                <div className="fact-card">
-                  <p className="workspace-kicker">Current owner</p>
-                  <p className="mt-2 text-sm font-semibold text-slate-900">{nextOwner || getStatusMeta(application.status).owner}</p>
+              {application.secondary_recruiter_email && (
+                <div className="text-right">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">2nd Recruiter</p>
+                  <p className="mt-1 text-sm font-semibold text-gray-900">{application.secondary_recruiter_email}</p>
                 </div>
-                <div className="fact-card">
-                  <p className="workspace-kicker">Secondary recruiter</p>
-                  <p className="mt-2 text-sm font-semibold text-slate-900">{application.secondary_recruiter_email || 'Not assigned'}</p>
-                </div>
-              </div>
+              )}
             </div>
           </section>
         </aside>
@@ -955,13 +1220,60 @@ export default function ApplicationWorkflow() {
             )}
           </section>
 
-          <section className="workspace-card panel-hover">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="section-title">Candidate Documents</h2>
-                <p className="mt-1 text-sm text-gray-500">Document requests, uploads, inline review, and reminders are grouped into one operating surface.</p>
+          {/* Interview Scheduling - moved up for better flow */}
+          {['AwaitingInterviewScheduling', 'Round1', 'Round2', 'Round3'].includes(application.status) && (
+            <section className="workspace-card panel-hover border-l-4 border-blue-500">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <h2 className="section-title">Interview Scheduling</h2>
+                  <InfoTip text="Confirm a suggested slot or schedule manually" />
+                </div>
+                {hasRole(['hr_admin', 'hr_recruiter']) && (
+                  <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                    Recruiter Action Required
+                  </span>
+                )}
               </div>
-              <span className="text-sm font-medium text-gray-500">{application.candidate_documents?.length || 0} document(s)</span>
+              
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {application.suggested_interview_datetime1 && (
+                  <button
+                    onClick={() => handleScheduleSlot(application.suggested_interview_datetime1)}
+                    className="rounded-xl border-2 border-blue-200 bg-blue-50/50 p-4 text-left hover:border-blue-400 hover:bg-blue-100 transition-all"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="rounded-full bg-blue-600 text-white text-xs px-2 py-0.5">Slot 1</span>
+                    </div>
+                    <p className="font-semibold text-gray-900">{formatDateTime(application.suggested_interview_datetime1)}</p>
+                    <p className="text-sm text-gray-500 mt-1">Click to confirm</p>
+                  </button>
+                )}
+                {application.suggested_interview_datetime2 && (
+                  <button
+                    onClick={() => handleScheduleSlot(application.suggested_interview_datetime2)}
+                    className="rounded-xl border-2 border-blue-200 bg-blue-50/50 p-4 text-left hover:border-blue-400 hover:bg-blue-100 transition-all"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="rounded-full bg-blue-600 text-white text-xs px-2 py-0.5">Slot 2</span>
+                    </div>
+                    <p className="font-semibold text-gray-900">{formatDateTime(application.suggested_interview_datetime2)}</p>
+                    <p className="text-sm text-gray-500 mt-1">Click to confirm</p>
+                  </button>
+                )}
+                <button
+                  onClick={openSchedulingWorkspace}
+                  className="rounded-xl border-2 border-dashed border-gray-300 p-4 text-left hover:border-gray-400 hover:bg-gray-50 transition-all"
+                >
+                  <p className="font-semibold text-gray-700">Add Custom Slot</p>
+                  <p className="text-sm text-gray-500 mt-1">Schedule manually</p>
+                </button>
+              </div>
+            </section>
+          )}
+
+          <section className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-gray-900">Documents ({application.candidate_documents?.length || 0})</h2>
             </div>
 
             {['Selected', 'OfferInProcess', 'Offered', 'OfferAccepted', 'Joined'].includes(application.status) && (
@@ -1112,7 +1424,7 @@ export default function ApplicationWorkflow() {
           </section>
 
           {/* Post-Document Clearance Flow */}
-          {['Selected', 'OfferInProcess', 'Offered', 'OfferAccepted', 'Joined'].includes(application.status) && (
+          {['Selected', 'DocumentsCleared', 'CTCSent', 'CTCAcceptance', 'CTCAccepted', 'OfferInProcess', 'Offered', 'OfferAccepted', 'Joined'].includes(application.status) && (
             <section className="workspace-card animate-fade-in-up">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -1126,8 +1438,244 @@ export default function ApplicationWorkflow() {
                 )}
               </div>
 
+              {/* CTC Breakup - Send to Candidate for Signature
+                  Includes SalaryRejected so a rejected version can be edited
+                  and resent without re-walking the full CTC chain. */}
+              {['Selected', 'DocumentsCleared', 'CTCSent', 'SalaryRejected'].includes(application.status) && hasRole('hr_admin', 'hr_recruiter') && (
+                <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <h3 className="text-sm font-semibold text-indigo-900">
+                      {application.status === 'SalaryRejected' ? 'Resend CTC breakup table' : 'CTC breakup table'}
+                    </h3>
+                    <InfoTip text="Paste your CTC breakup table directly from Excel - the formatting (cells, colours, alignment) is kept. Candidate signs electronically before we proceed to recruiter 2." />
+                  </div>
+                  <RichClipboardEditor
+                    initialHtml={ctcBreakupHtml}
+                    onChange={({ html, text }) => {
+                      setCtcBreakupHtml(html);
+                      setCtcBreakupText(text);
+                    }}
+                    placeholder="Copy your breakup from Excel and paste here. Tables, bold, colours and alignment are preserved."
+                  />
+                  <div className="mt-3">
+                    <label className="block text-xs font-semibold text-indigo-900 mb-1">Optional attachment</label>
+                    <input
+                      type="file"
+                      onChange={(event) => setCtcBreakupAttachment(event.target.files?.[0] || null)}
+                      className="block w-full text-xs text-indigo-900"
+                    />
+                  </div>
+                  {ctcBreakups.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-indigo-900">Version history</p>
+                      {ctcBreakups.slice(0, 3).map((b) => (
+                        <div key={b.id} className={`rounded-lg border px-3 py-2 text-xs ${b.candidate_decision === 'accepted' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : b.candidate_decision === 'rejected' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                          <span className="font-semibold">v{b.version}</span>
+                          <span className="ml-2">{b.candidate_decision || 'Awaiting candidate response'}</span>
+                          {b.decision_at && <span className="ml-2 opacity-70">{new Date(b.decision_at).toLocaleString()}</span>}
+                          {b.attachment_name && <span className="ml-2 opacity-70">Attachment: {b.attachment_name}</span>}
+                          {b.candidate_decision_notes && <p className="mt-1 italic opacity-90">"{b.candidate_decision_notes}"</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSendCtcBreakup}
+                    disabled={ctcBreakupLoading || !ctcBreakupHtml.trim()}
+                    className="btn-primary mt-3 disabled:opacity-50"
+                  >
+                    {ctcBreakupLoading ? 'Sending…' : application.status === 'SalaryRejected' ? 'Resend updated breakup' : 'Send to candidate for signature'}
+                  </button>
+                </div>
+              )}
+
+              {/* Show candidate response if in CTCAcceptance status */}
+              {['CTCAcceptance', 'CTCAccepted'].includes(application.status) && ctcBreakups.length > 0 && (
+                <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                  <h3 className="text-sm font-semibold text-gray-900">CTC Breakup Status</h3>
+	                  {ctcBreakups[0]?.candidate_decision === 'accepted' && (
+	                    <div className="mt-2 text-sm text-green-700">✓ Candidate has accepted the CTC breakup</div>
+	                  )}
+                  {ctcBreakups[0]?.candidate_decision === 'rejected' && (
+                    <div className="mt-2 text-sm text-red-700">
+                      ✗ Candidate has rejected the CTC breakup
+                      {ctcBreakups[0]?.candidate_notes && <span className="block mt-1 text-gray-600">Reason: {ctcBreakups[0].candidate_notes}</span>}
+	                </div>
+	              )}
+
+              {application.status === 'CTCAccepted' && hasRole('hr_admin', 'hr_recruiter') && (
+                <div className="mt-5 rounded-2xl border border-teal-200 bg-teal-50 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <h3 className="text-sm font-semibold text-teal-900">CTC comparison table</h3>
+                    <InfoTip text="After candidate acceptance, paste the CTC comparison table from Excel and send it to recruiter 2 with an optional attachment." />
+                  </div>
+                  <RichClipboardEditor
+                    initialHtml={ctcComparisonHtml}
+                    onChange={({ html, text }) => {
+                      setCtcComparisonHtml(html);
+                      setCtcComparisonText(text);
+                    }}
+                    placeholder="Paste the CTC comparison table from Excel. Formatting is preserved."
+                  />
+                  <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr]">
+                    <div>
+                      <label className="block text-xs font-semibold text-teal-900 mb-1">Recruiter 2</label>
+                      <EmailAutocompleteTags
+                        value={effectiveSecondaryRecruiterEmail
+                          ? [{ label: effectiveSecondaryRecruiterEmail, email: effectiveSecondaryRecruiterEmail, source: 'manual' }]
+                          : []}
+                        onChange={(items) => setSecondaryRecruiterEmail(items[0]?.email || '')}
+                        max={1}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-teal-900 mb-1">Optional attachment</label>
+                      <input
+                        type="file"
+                        onChange={(event) => setCtcComparisonAttachment(event.target.files?.[0] || null)}
+                        className="block w-full text-xs text-teal-900"
+                      />
+                    </div>
+                  </div>
+                  {ctcComparisons.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-teal-900">Comparison history</p>
+                      {ctcComparisons.slice(0, 3).map((comparison) => (
+                        <div key={comparison.id} className="rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs text-teal-900">
+                          <span className="font-semibold">{new Date(comparison.created_at).toLocaleString()}</span>
+                          <span className="ml-2">by {comparison.created_by_email}</span>
+                          {comparison.attachment_name && <span className="ml-2 opacity-70">Attachment: {comparison.attachment_name}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSendCtcComparison}
+                    disabled={ctcBreakupLoading || !ctcComparisonHtml.trim()}
+                    className="btn-primary mt-3 disabled:opacity-50"
+                  >
+                    {ctcBreakupLoading ? 'Sending…' : 'Send comparison to recruiter 2'}
+                  </button>
+                </div>
+              )}
+                  {ctcBreakups[0]?.candidate_decision === null && (
+                    <div className="mt-2 text-sm text-amber-700">Waiting for candidate to respond to CTC breakup</div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Recruiter 2 clearance ───────────────────────────────────────
+                  Surfaces only when:
+                    - candidate has accepted the breakup
+                    - a comparison exists (R1 has done their second-table step)
+                    - no R2 decision yet
+                    - the current user is the secondary recruiter (or hr_admin
+                      acting on their behalf)
+                  Recruiter 2 can clear → forwards to HR admin, or send back. */}
+              {ctcBreakups[0]?.candidate_decision === 'accepted'
+                && ctcComparisons.length > 0
+                && !ctcBreakups[0]?.r2_decision
+                && (hasRole('hr_admin') || (effectiveSecondaryRecruiterEmail && user?.email?.toLowerCase() === effectiveSecondaryRecruiterEmail.toLowerCase())) && (
+                <div className="mt-5 rounded-2xl border border-cyan-200 bg-cyan-50 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <h3 className="text-sm font-semibold text-cyan-900">Recruiter 2 · clear & forward to HR Admin</h3>
+                    <InfoTip text="Review the breakup, candidate signature, and comparison table above. Approve to forward to HR Admin, or send back to recruiter 1 with notes." />
+                  </div>
+                  <p className="text-xs text-cyan-800 mb-3">
+                    Confirm the package is consistent (breakup matches comparison, candidate has signed, no missing docs). Approving forwards to HR Admin for final decision.
+                  </p>
+                  <textarea
+                    className="input-field w-full"
+                    rows={2}
+                    value={r2Notes}
+                    onChange={(e) => setR2Notes(e.target.value)}
+                    placeholder="Notes (required when sending back)…"
+                  />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={r2Busy}
+                      className="btn-primary disabled:opacity-50"
+                      onClick={async () => {
+                        setR2Busy(true);
+                        try {
+                          const { ctcBreakupAPI } = await import('../services/api');
+                          await ctcBreakupAPI.r2Clear(application.application_id || id, { decision: 'approved', notes: r2Notes });
+                          toast.success('Cleared and forwarded to HR Admin');
+                          setR2Notes('');
+                          loadCtcBreakups();
+                        } catch (err) {
+                          toast.error(err.response?.data?.error || 'Failed');
+                        } finally { setR2Busy(false); }
+                      }}
+                    >Clear & forward to HR Admin</button>
+                    <button
+                      type="button"
+                      disabled={r2Busy || !r2Notes.trim()}
+                      className="btn-secondary text-rose-700 disabled:opacity-50"
+                      onClick={async () => {
+                        setR2Busy(true);
+                        try {
+                          const { ctcBreakupAPI } = await import('../services/api');
+                          await ctcBreakupAPI.r2Clear(application.application_id || id, { decision: 'rejected', notes: r2Notes });
+                          toast.success('Sent back to recruiter 1');
+                          setR2Notes('');
+                          loadCtcBreakups();
+                        } catch (err) {
+                          toast.error(err.response?.data?.error || 'Failed');
+                        } finally { setR2Busy(false); }
+                      }}
+                    >Send back to recruiter 1</button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── HR Admin all-view CTA ──────────────────────────────────────
+                  Shows when R2 has cleared and HR admin hasn't decided yet.
+                  Opens the comprehensive review modal with approve / reject /
+                  renegotiate / forward-to-approvers in one place. */}
+              {hasRole('hr_admin')
+                && ctcBreakups[0]?.r2_decision === 'approved'
+                && !ctcBreakups[0]?.admin_decision && (
+                <div className="mt-5 rounded-2xl border border-indigo-300 bg-gradient-to-r from-indigo-50 via-white to-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-indigo-900">CTC awaiting your final decision</h3>
+                      <p className="text-xs text-indigo-700 mt-1">
+                        Recruiter 2 has cleared this package. Open the review to approve, reject, send back, or forward to approvers.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCtcAdminModalOpen(true)}
+                      className="btn-primary whitespace-nowrap"
+                    >Open CTC review →</button>
+                  </div>
+                </div>
+              )}
+
+              {/* HR Admin: any time after R2 has cleared - let admin re-open the
+                  modal to view history (e.g. after they've already decided). */}
+              {hasRole('hr_admin') && ctcBreakups[0]?.admin_decision && (
+                <div className="mt-3">
+                  <button type="button" className="btn-secondary text-xs" onClick={() => setCtcAdminModalOpen(true)}>
+                    View CTC review history ({ctcBreakups[0].admin_decision})
+                  </button>
+                </div>
+              )}
+
+              {ctcAdminModalOpen && (
+                <CtcAdminReviewModal
+                  application={application}
+                  onClose={() => setCtcAdminModalOpen(false)}
+                  onChanged={() => { loadCtcBreakups(); loadApplication(); }}
+                />
+              )}
+
               {/* Secondary recruiter assignment */}
-              {!application.secondary_recruiter_email && (
+              {!effectiveSecondaryRecruiterEmail && (
                 <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
                   <p className="text-sm font-semibold text-amber-900">Secondary recruiter required before clearance</p>
                   <div className="mt-3 flex gap-3">
@@ -1150,9 +1698,9 @@ export default function ApplicationWorkflow() {
                 </div>
               )}
 
-              {application.secondary_recruiter_email && (
+              {effectiveSecondaryRecruiterEmail && (
                 <p className="mt-3 text-sm text-gray-500">
-                  Secondary recruiter: <span className="font-semibold text-gray-800">{application.secondary_recruiter_email}</span>
+                  Secondary recruiter: <span className="font-semibold text-gray-800">{effectiveSecondaryRecruiterEmail}</span>
                 </p>
               )}
 
@@ -1197,8 +1745,8 @@ export default function ApplicationWorkflow() {
               {(!clearance || clearance.status === 'pending' || clearance.status === 'renegotiation') && hasRole('hr_admin', 'hr_recruiter') && (
                 <div className="mt-5">
                   <div className="flex items-center gap-2 mb-3">
-                    <h3 className="text-sm font-semibold text-gray-900">CTC Comparison Table</h3>
-                    <InfoTip text="Paste the CTC comparison table directly from your Excel sheet - rows and columns are preserved exactly as pasted." />
+                    <h3 className="text-sm font-semibold text-gray-900">CTC Breakup Table</h3>
+                    <InfoTip text="Paste the CTC breakup table directly from your Excel sheet - rows and columns are preserved exactly as pasted. Format persists on copy-paste." />
                   </div>
                   <CTCPasteTable
                     value={ctcTable}
@@ -1246,7 +1794,7 @@ export default function ApplicationWorkflow() {
                   <button
                     type="button"
                     onClick={handleSubmitClearance}
-                    disabled={clearanceLoading || !application.secondary_recruiter_email}
+                    disabled={clearanceLoading || !effectiveSecondaryRecruiterEmail}
                     className="btn-primary mt-4 w-full disabled:opacity-50"
                   >
                     {clearanceLoading ? 'Submitting...' : clearance?.status === 'renegotiation' ? 'Resubmit After Renegotiation' : 'Submit for Secondary Review'}
@@ -1266,7 +1814,7 @@ export default function ApplicationWorkflow() {
               {/* Read-only CTC display for non-editors or post-submission */}
               {clearance && !['pending', 'renegotiation'].includes(clearance.status) && clearance.ctc_data && (
                 <div className="mt-5">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-3">CTC Table (Submitted)</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">CTC Breakup Table (Submitted)</h3>
                   <CTCPasteTable value={ctcTable} readOnly />
                   {!aopInline && clearance.aop_exceeded_amount > 0 && (
                     <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2">
@@ -1401,12 +1949,36 @@ export default function ApplicationWorkflow() {
         <aside className="workboard-lane workboard-lane-aside">
           <section className="focus-panel">
             <div className="flex items-center gap-2">
-              <h2 className="section-title">Guided Next Step</h2>
+              <h2 className="section-title">Your Action Item</h2>
               <InfoTip text="Only the next operationally valid step is highlighted here so recruiters do not have to infer the process from row buttons or guesswork." />
             </div>
 
-            <div className="decision-card decision-card-strong mt-5">
-              <p className="workspace-kicker text-indigo-600">Recommended next action</p>
+            <div className={`decision-card decision-card-strong mt-5 ${
+              ['InQueue', 'Applied', 'Shortlisted'].includes(application.status) ? 'border-amber-300 bg-amber-50' :
+              ['AwaitingHODResponse', 'AwaitingInterviewScheduling'].includes(application.status) ? 'border-blue-300 bg-blue-50' :
+              ['Round1', 'Round2', 'Round3', 'AwaitingFeedback'].includes(application.status) ? 'border-purple-300 bg-purple-50' :
+              ['Selected', 'DocumentsCleared', 'CTCSent', 'CTCAcceptance', 'CTCAccepted', 'OfferInProcess', 'Offered'].includes(application.status) ? 'border-green-300 bg-green-50' :
+              'border-indigo-300 bg-indigo-50'
+            }`}>
+              <p className={`workspace-kicker ${
+                ['InQueue', 'Applied', 'Shortlisted'].includes(application.status) ? 'text-amber-600' :
+                ['AwaitingHODResponse', 'AwaitingInterviewScheduling'].includes(application.status) ? 'text-blue-600' :
+                ['Round1', 'Round2', 'Round3', 'AwaitingFeedback'].includes(application.status) ? 'text-purple-600' :
+                ['Selected', 'DocumentsCleared', 'CTCSent', 'CTCAcceptance', 'CTCAccepted', 'OfferInProcess', 'Offered'].includes(application.status) ? 'text-green-600' :
+                'text-indigo-600'
+              }`}>
+                {['InQueue', 'Applied'].includes(application.status) ? 'HR Screening Stage' :
+                 application.status === 'Shortlisted' ? 'Interview Planning Stage' :
+                 ['AwaitingHODResponse'].includes(application.status) ? 'HOD Review Stage' :
+                 ['AwaitingInterviewScheduling'].includes(application.status) ? 'Scheduling Stage' :
+                 ['Round1', 'Round2', 'Round3'].includes(application.status) ? `Interview Round ${application.status.replace('Round', '')}` :
+                 application.status === 'AwaitingFeedback' ? 'Feedback Pending' :
+                 ['Selected', 'DocumentsCleared'].includes(application.status) ? 'Document Collection' :
+                 ['CTCSent', 'CTCAcceptance', 'CTCAccepted'].includes(application.status) ? 'CTC Negotiation' :
+                 ['OfferInProcess', 'Offered'].includes(application.status) ? 'Offer Processing' :
+                 application.status === 'OfferAccepted' ? 'Joining Process' :
+                 'Current Stage'}
+              </p>
               <p className="mt-2 text-lg font-semibold text-gray-950">{primaryAction?.label || 'Monitor current owner activity'}</p>
               <p className="mt-2 text-sm text-gray-600">{getStatusMeta(application.status).summary}</p>
             </div>
@@ -1829,89 +2401,6 @@ export default function ApplicationWorkflow() {
         </aside>
       </div>
 
-      {['AwaitingInterviewScheduling', 'Round1', 'Round2', 'Round3'].includes(application.status) && (
-        <section className="workspace-card panel-hover mt-6 border-l-4 border-blue-500">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <div className="flex items-center gap-2">
-              <h2 className="section-title">Interview Scheduling</h2>
-              <InfoTip text="Confirm a suggested slot or schedule manually" />
-            </div>
-            {hasRole(['hr_admin', 'hr_recruiter']) && (
-              <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                Recruiter Action Required
-              </span>
-            )}
-          </div>
-          
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {application.suggested_interview_datetime1 && (
-              <button
-                onClick={() => handleScheduleSlot(application.suggested_interview_datetime1)}
-                className="rounded-xl border-2 border-blue-200 bg-blue-50/50 p-4 text-left hover:border-blue-400 hover:bg-blue-100 transition-all"
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="rounded-full bg-blue-600 text-white text-xs px-2 py-0.5">Slot 1</span>
-                </div>
-                <p className="font-semibold text-gray-900">{formatDateTime(application.suggested_interview_datetime1)}</p>
-                <p className="text-sm text-gray-500 mt-1">Click to confirm</p>
-              </button>
-            )}
-            {application.suggested_interview_datetime2 && (
-              <button
-                onClick={() => handleScheduleSlot(application.suggested_interview_datetime2)}
-                className="rounded-xl border-2 border-blue-200 bg-blue-50/50 p-4 text-left hover:border-blue-400 hover:bg-blue-100 transition-all"
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="rounded-full bg-blue-600 text-white text-xs px-2 py-0.5">Slot 2</span>
-                </div>
-                <p className="font-semibold text-gray-900">{formatDateTime(application.suggested_interview_datetime2)}</p>
-                <p className="text-sm text-gray-500 mt-1">Click to confirm</p>
-              </button>
-            )}
-            <div className="rounded-xl border-2 border-dashed border-gray-200 p-4 space-y-3">
-              <p className="text-sm font-medium text-gray-700">Schedule custom slot</p>
-              <input
-                type="datetime-local"
-                onChange={(e) => setScheduleForm(prev => ({ ...prev, datetime: e.target.value }))}
-                className="input-field w-full text-sm"
-              />
-              <input
-                type="url"
-                placeholder="Meeting link (Zoom/Teams/Google Meet)"
-                value={scheduleForm.meeting_link}
-                onChange={(e) => setScheduleForm(prev => ({ ...prev, meeting_link: e.target.value }))}
-                className="input-field w-full text-sm"
-              />
-              <button
-                onClick={handleQuickSchedule}
-                disabled={!scheduleForm.datetime || scheduleSubmitting}
-                className="w-full btn-primary text-sm"
-              >
-                {scheduleSubmitting ? 'Scheduling...' : 'Confirm Schedule'}
-              </button>
-            </div>
-          </div>
-
-          {application.scheduled_datetime && (
-            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-xl">
-              <p className="text-sm font-medium text-green-800">
-                Currently scheduled: {formatDateTime(application.scheduled_datetime)}
-              </p>
-              {application.meeting_link && (
-                <a 
-                  href={application.meeting_link} 
-                  target="_blank" 
-                  rel="noreferrer"
-                  className="mt-2 inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
-                >
-                  🔗 Join Meeting
-                </a>
-              )}
-            </div>
-          )}
-        </section>
-      )}
-
       <section className="workspace-card panel-hover mt-6">
         <div className="flex items-center gap-2 mb-4">
           <h2 className="section-title">Candidate Timeline & TAT</h2>
@@ -1970,7 +2459,7 @@ export default function ApplicationWorkflow() {
                   <div className="rounded-xl border-2 border-green-200 bg-green-50 p-4">
                     <p className="font-semibold text-green-800">{formatDateTime(application.scheduled_datetime)}</p>
                     <p className="mt-1 text-sm text-green-700">
-                      Round {getCurrentRoundTask(application)?.round_number || '—'}
+                      Round {getCurrentRoundTask(application)?.round_number || ''}
                     </p>
                     {application.meeting_link && (
                       <a 

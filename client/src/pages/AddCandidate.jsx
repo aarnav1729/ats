@@ -117,6 +117,7 @@ export default function AddCandidate() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(isEdit);
   const [duplicateWarning, setDuplicateWarning] = useState('');
+  const [pendingDuplicate, setPendingDuplicate] = useState(null);
   const [resumeFile, setResumeFile] = useState(null);
   const [uploadedResume, setUploadedResume] = useState(null);
   const [resumeInsights, setResumeInsights] = useState(null);
@@ -226,8 +227,7 @@ export default function AddCandidate() {
     maxSize: 10 * 1024 * 1024,
   });
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
+  const submitCandidate = async ({ allowDuplicate = false } = {}) => {
     if (!form.candidate_name || !form.candidate_email) {
       toast.error('Name and email are required');
       return;
@@ -244,9 +244,11 @@ export default function AddCandidate() {
       }
     }
     setDuplicateWarning('');
+    setPendingDuplicate(null);
 
     setSaving(true);
     try {
+      let shouldNavigate = true;
       const resumeMeta = resumeRemoved ? null : uploadedResume;
       if (isEdit) {
         const payload = buildUpdatePayload({
@@ -273,23 +275,41 @@ export default function AddCandidate() {
           resume_file_name: resumeMeta?.originalName || resumeMeta?.filename || resumeFile?.name,
           resume_path: resumeMeta?.path || undefined,
           created_by: user.email,
+          recruiter_email: isTalentPool ? user.email : (form.recruiter_email || user.email),
+          allow_duplicate: allowDuplicate,
         };
         const res = await applicationsAPI.create(data);
         const warnings = res.data?._warnings || [];
         if (warnings.length) {
           setDuplicateWarning(warnings[0]);
-          toast('Candidate added — ' + warnings[0], { icon: '⚠️' });
+          if (allowDuplicate) {
+            toast.success('Duplicate candidate added and audit details captured for admin');
+          } else {
+            toast('Candidate added - ' + warnings[0], { icon: '⚠️' });
+            shouldNavigate = false;
+          }
         } else {
           toast.success('Candidate added successfully');
         }
       }
 
-      if (!warnings?.length) navigate(isTalentPool ? '/talent-pool' : `/jobs/${jobId}`);
+      if (shouldNavigate) navigate(isTalentPool ? '/talent-pool' : `/jobs/${jobId}`);
     } catch (err) {
+      if (!isEdit && err.response?.status === 409 && err.response?.data?.existing) {
+        setPendingDuplicate(err.response.data.existing);
+        setDuplicateWarning('This candidate already exists for this job. Admins will see both the original uploader and your duplicate upload if you continue.');
+        toast('Duplicate candidate found. Review and continue only if this is intentional.', { icon: '⚠️' });
+        return;
+      }
       toast.error(err.response?.data?.error || `Failed to ${isEdit ? 'update' : 'add'} candidate`);
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    await submitCandidate();
   };
 
   const updateForm = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
@@ -517,7 +537,13 @@ export default function AddCandidate() {
                 <div>
                   <p className="font-semibold">Duplicate phone detected</p>
                   <p className="mt-0.5">{duplicateWarning}</p>
-                  <button type="button" onClick={() => navigate(isTalentPool ? '/talent-pool' : `/jobs/${jobId}`)} className="mt-2 font-semibold text-amber-700 underline underline-offset-2">Continue anyway →</button>
+                  {pendingDuplicate ? (
+                    <button type="button" disabled={saving} onClick={() => submitCandidate({ allowDuplicate: true })} className="mt-2 font-semibold text-amber-700 underline underline-offset-2 disabled:opacity-50">
+                      Continue anyway
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => navigate(isTalentPool ? '/talent-pool' : `/jobs/${jobId}`)} className="mt-2 font-semibold text-amber-700 underline underline-offset-2">Close warning</button>
+                  )}
                 </div>
               </div>
             )}

@@ -1,5 +1,9 @@
 import pool from '../db.js';
 
+function getISTTimestamp() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+}
+
 export async function logAudit(input) {
   const {
     actionBy,
@@ -32,9 +36,10 @@ export async function logAudit(input) {
   const resolvedMetadata = metadata ?? details ?? {};
 
   try {
+    const istTime = getISTTimestamp();
     await pool.query(
-      `INSERT INTO audit_trail (action_by, action_type, entity_type, entity_id, field_edited, before_state, after_state, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      `INSERT INTO audit_trail (action_by, action_type, entity_type, entity_id, field_edited, before_state, after_state, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         resolvedActionBy,
         resolvedActionType,
@@ -44,6 +49,7 @@ export async function logAudit(input) {
         resolvedBeforeState ? JSON.stringify(resolvedBeforeState) : null,
         resolvedAfterState ? JSON.stringify(resolvedAfterState) : null,
         resolvedMetadata ? JSON.stringify(resolvedMetadata) : '{}',
+        istTime,
       ]
     );
   } catch (err) {

@@ -172,7 +172,7 @@ export default function EmailComposer({
               className="input-field resize-none font-mono text-sm"
               placeholder="Type your email body here. Each paragraph will be wrapped automatically. Use the tag buttons above to insert placeholders."
             />
-            <p className="mt-1 text-xs text-gray-400">Plain text — each line becomes a paragraph in the final email. Premier Energies branding header/footer is added automatically.</p>
+            <p className="mt-1 text-xs text-gray-400">Plain text  each line becomes a paragraph in the final email. Premier Energies branding header/footer is added automatically.</p>
           </div>
 
           {/* Preview hint */}

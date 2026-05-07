@@ -159,35 +159,37 @@ export default function CandidatePage() {
         <div className="aurora-content">
           <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-200">My Tasks</p>
-              <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-white">
+              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-slate-700">My Tasks</p>
+              <h1 className="mt-3 text-3xl font-semibold text-slate-950">
                 {firstDoc?.job_title || 'Document Checklist'}
               </h1>
-              <p className="mt-2 text-sm text-white/70">{firstDoc?.app_status || 'Upload required documents to proceed'}</p>
+              <p className="mt-2 inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-sm font-bold text-indigo-800">
+                {firstDoc?.app_status || 'Upload required documents to proceed'}
+              </p>
             </div>
             <div className="flex items-center gap-6">
               <div className="text-center">
-                <p className="text-3xl font-bold text-white">{progressPercent}%</p>
-                <p className="text-xs text-cyan-200 mt-1">Complete</p>
+                <p className="text-3xl font-bold text-slate-950">{progressPercent}%</p>
+                <p className="text-xs font-bold text-slate-700 mt-1">Complete</p>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-center backdrop-blur">
-                  <p className="text-xl font-bold text-white">{completedDocs}</p>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-green-300">Accepted</p>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center shadow-sm">
+                  <p className="text-xl font-bold text-slate-950">{completedDocs}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Accepted</p>
                 </div>
-                <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-center backdrop-blur">
-                  <p className="text-xl font-bold text-white">{uploadedDocs}</p>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-300">In Review</p>
+                <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-center shadow-sm">
+                  <p className="text-xl font-bold text-slate-950">{uploadedDocs}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-blue-700">In Review</p>
                 </div>
-                <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-center backdrop-blur">
-                  <p className="text-xl font-bold text-white">{pendingDocs}</p>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-300">Pending</p>
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center shadow-sm">
+                  <p className="text-xl font-bold text-slate-950">{pendingDocs}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Pending</p>
                 </div>
               </div>
             </div>
           </div>
           {/* Progress bar */}
-          <div className="mt-6 h-2 rounded-full bg-white/15 overflow-hidden">
+          <div className="mt-6 h-2 rounded-full bg-slate-200 overflow-hidden">
             <div
               className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-green-400 transition-all duration-700 ease-out"
               style={{ width: `${progressPercent}%` }}

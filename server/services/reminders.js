@@ -1,6 +1,6 @@
 // Scheduled-reminder runner. Polls the `scheduled_reminders` table every
 // 30 seconds and dispatches due jobs. Built on setInterval so we don't need
-// node-cron or BullMQ — the cadence requirements (T-24h, T-30m, daily)
+// node-cron or BullMQ  the cadence requirements (T-24h, T-30m, daily)
 // don't need sub-second precision.
 //
 // Public API:

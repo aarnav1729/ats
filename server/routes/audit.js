@@ -260,6 +260,53 @@ router.get('/stats', adminOnly, async (req, res) => {
       typeCounts[row.action_type] = Number(row.count || 0);
     }
 
+    // Session duration calculation: pair login/logout per user
+    const sessionStats = await pool.query(
+      `WITH login_logout_pairs AS (
+        SELECT
+          l.action_by,
+          l.created_at AS login_time,
+          n.created_at AS logout_time,
+          EXTRACT(EPOCH FROM (n.created_at - l.created_at)) AS duration_secs
+        FROM audit_trail l
+        JOIN audit_trail n ON l.action_by = n.action_by
+          AND n.action_type = 'logout'
+          AND n.created_at > l.created_at
+          AND n.created_at <= l.created_at + INTERVAL '24 hours'
+        WHERE l.action_type = 'login'
+      )
+      SELECT
+        action_by,
+        COUNT(*) AS session_count,
+        AVG(duration_secs) AS avg_duration_secs,
+        MIN(duration_secs) AS min_duration,
+        MAX(duration_secs) AS max_duration
+      FROM login_logout_pairs
+      WHERE duration_secs > 0 AND duration_secs < 86400
+      GROUP BY action_by
+      ORDER BY session_count DESC`,
+      []
+    );
+
+    // Most common actions top 10
+    const topActions = byType.rows.slice(0, 10);
+
+    // Active users today
+    const activeUsersToday = await pool.query(
+      `SELECT COUNT(DISTINCT action_by) AS count FROM audit_trail WHERE action_type = 'login' AND created_at >= CURRENT_DATE`,
+      []
+    );
+
+    // Session frequency per user over last 7 days
+    const sessionFrequency = await pool.query(
+      `SELECT action_by, COUNT(*) AS login_count
+       FROM audit_trail
+       WHERE action_type = 'login' AND created_at >= NOW() - INTERVAL '7 days'
+       GROUP BY action_by
+       ORDER BY login_count DESC`,
+      []
+    );
+
     // Login activity: per-user login counts in the same window + DAU on logins.
     const [loginsByUser, dauLogins, dauActions, totalLogins, sessionsToday] = await Promise.all([
       pool.query(
@@ -286,9 +333,13 @@ router.get('/stats', adminOnly, async (req, res) => {
       ),
       pool.query(
         `SELECT COUNT(*) AS c FROM audit_trail
-          WHERE action_type = 'login' AND created_at >= NOW() - INTERVAL '24 hours'`
+           WHERE action_type = 'login' AND created_at >= NOW() - INTERVAL '24 hours'`,
       ),
     ]);
+
+    const avgSessionDuration = sessionStats.rows.length > 0
+      ? Math.round(sessionStats.rows.reduce((s, r) => s + Number(r.avg_duration_secs || 0), 0) / sessionStats.rows.length)
+      : 0;
 
     res.json({
       ...typeCounts,
@@ -304,9 +355,95 @@ router.get('/stats', adminOnly, async (req, res) => {
       logins_by_user: loginsByUser.rows,
       dau_logins: dauLogins.rows,
       dau_actions: dauActions.rows,
+      avg_session_duration_secs: avgSessionDuration,
+      session_stats: sessionStats.rows,
+      most_common_actions: topActions,
+      active_users_today: Number(activeUsersToday.rows[0]?.count || 0),
+      session_frequency_7d: sessionFrequency.rows,
     });
   } catch (err) {
     console.error('Audit stats error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /login-activity - Login activity stats per user with daily breakdown
+router.get('/login-activity', adminOnly, async (req, res) => {
+  try {
+    // Per-user login stats
+    const userLoginStats = await pool.query(
+      `SELECT
+        action_by AS email,
+        u.role,
+        u.name,
+        COUNT(*) AS total_logins,
+        MIN(a.created_at) AS first_login,
+        MAX(a.created_at) AS last_login,
+        COUNT(DISTINCT DATE(a.created_at AT TIME ZONE 'Asia/Kolkata')) AS active_days
+      FROM audit_trail a
+      JOIN users u ON u.email = a.action_by
+      WHERE a.action_type = 'login'
+      GROUP BY action_by, u.role, u.name
+      ORDER BY total_logins DESC`,
+      []
+    );
+
+    // Total actions per user
+    const userActions = await pool.query(
+      `SELECT action_by, COUNT(*) AS total_actions
+       FROM audit_trail
+       GROUP BY action_by`,
+      []
+    );
+    const actionsByUser = {};
+    for (const row of userActions.rows) {
+      actionsByUser[row.action_by] = Number(row.total_actions);
+    }
+
+    // Actions today per user
+    const actionsToday = await pool.query(
+      `SELECT action_by, COUNT(*) AS actions_today
+       FROM audit_trail
+       WHERE created_at >= CURRENT_DATE
+       GROUP BY action_by`,
+      []
+    );
+    const actionsTodayMap = {};
+    for (const row of actionsToday.rows) {
+      actionsTodayMap[row.action_by] = Number(row.actions_today);
+    }
+
+    // Daily breakdown for last 30 days
+    const dailyBreakdown = await pool.query(
+      `SELECT
+        DATE(created_at AT TIME ZONE 'Asia/Kolkata') AS day,
+        COUNT(*) AS total_logins,
+        COUNT(DISTINCT action_by) AS unique_users
+       FROM audit_trail
+       WHERE action_type = 'login' AND created_at >= NOW() - INTERVAL '30 days'
+       GROUP BY day
+       ORDER BY day DESC`,
+      []
+    );
+
+    const usersWithStats = userLoginStats.rows.map((u) => ({
+      email: u.email,
+      role: u.role,
+      name: u.name,
+      total_logins: Number(u.total_logins),
+      first_login: u.first_login,
+      last_login: u.last_login,
+      active_days: Number(u.active_days),
+      total_actions: actionsByUser[u.email] || 0,
+      actions_today: actionsTodayMap[u.email] || 0,
+    }));
+
+    res.json({
+      users: usersWithStats,
+      daily_breakdown: dailyBreakdown.rows,
+    });
+  } catch (err) {
+    console.error('Login activity error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

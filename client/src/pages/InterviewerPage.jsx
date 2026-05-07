@@ -144,8 +144,15 @@ export default function InterviewerPage() {
     mastersAPI.list('rejection-reasons', { limit: 200 })
       .then((res) => {
         const items = Array.isArray(res.data) ? res.data : res.data?.items || res.data?.data || [];
-        const reasons = items.filter((item) => item.active_flag !== false).map((item) => item.reason).filter(Boolean);
+        const reasons = items
+          .filter((item) => item.active_flag !== false)
+          .map((item) => item.rejection_reason || item.reason || item.name)
+          .filter(Boolean);
         if (reasons.length > 0) setRejectionReasonOptions(reasons);
+        else if (items.length > 0) {
+          const allReasons = items.map((item) => item.rejection_reason || item.reason || item.name).filter(Boolean);
+          setRejectionReasonOptions(allReasons);
+        }
       })
       .catch(() => {});
   }, []);
@@ -484,7 +491,7 @@ export default function InterviewerPage() {
               <div className="flex gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
                 {row.meeting_join_url && <a href={row.meeting_join_url} target="_blank" rel="noreferrer" className="text-xs px-2.5 py-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium">Teams</a>}
                 <button onClick={() => navigate(`/interviews/${row.id || row._id}/workspace`)} className="text-xs px-2.5 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-medium">Workspace</button>
-                {canCoordinate && row.application_record_id && <button onClick={() => navigate(`/applications/${row.application_record_id}/schedule`)} className="text-xs px-2.5 py-1 rounded bg-amber-50 text-amber-600 hover:bg-amber-100 font-medium">Schedule</button>}
+                {canCoordinate && row.application_record_id && <button onClick={() => navigate(`/applications/${application.id}/workflow`)} className="text-xs px-2.5 py-1 rounded bg-amber-50 text-amber-600 hover:bg-amber-100 font-medium">Schedule</button>}
               </div>
             )},
           ]}

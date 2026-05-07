@@ -46,7 +46,7 @@ router.get('/tat/step-pairs', requireRole('hr_admin', 'hr_recruiter', 'hod', 'cx
 });
 
 /**
- * GET /timeline/events/raw — list with filters, for MIS raw browsing.
+ * GET /timeline/events/raw  list with filters, for MIS raw browsing.
  */
 router.get('/events/raw', requireRole('hr_admin', 'hr_recruiter'), async (req, res) => {
   try {

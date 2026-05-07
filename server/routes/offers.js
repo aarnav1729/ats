@@ -43,11 +43,53 @@ router.post('/:applicationId/upload', hrAny, upload.single('file'), async (req, 
     if (!app) return res.status(404).json({ error: 'Application not found' });
     if (!req.file) return res.status(400).json({ error: 'PDF required' });
 
+    // ── Pre-flight gate ───────────────────────────────────────────────────
+    // Offer can only be released when the full chain is clear:
+    //   (a) all required candidate documents are 'accepted'
+    //   (b) candidate has signed/accepted the active CTC breakup
+    //   (c) Recruiter 2 has cleared (r2_decision = 'approved')
+    //   (d) HR Admin has approved (admin_decision = 'approved')
+    //       - OR if forwarded to approvers, all of them approved
+    // Application status must already be 'OfferInProcess' for the upload to land.
+    if (req.body?.bypass !== '1') {  // escape hatch for emergencies
+      const status = String(app.status || '').toLowerCase();
+      if (status !== 'offerinprocess') {
+        return res.status(409).json({ error: `Cannot upload offer letter - application is in "${app.status}", needs to be in OfferInProcess (CTC fully approved).` });
+      }
+      // Doc check
+      const pendingDocs = await pool.query(
+        `SELECT COUNT(*) AS c FROM candidate_documents
+          WHERE application_id = $1
+            AND COALESCE(status, 'pending') NOT IN ('accepted', 'approved')`,
+        [app.id]
+      );
+      if (Number(pendingDocs.rows[0].c) > 0) {
+        return res.status(409).json({ error: `Cannot upload offer letter - ${pendingDocs.rows[0].c} candidate document(s) still pending or rejected.` });
+      }
+      // Active breakup must be candidate-accepted + R2-approved + admin-approved
+      const bq = await pool.query(
+        `SELECT candidate_decision, r2_decision, admin_decision FROM ctc_breakups
+          WHERE application_id = $1 ORDER BY version DESC, created_at DESC LIMIT 1`,
+        [app.id]
+      );
+      const breakup = bq.rows[0];
+      if (!breakup) return res.status(409).json({ error: 'Cannot upload offer letter - no CTC breakup on file.' });
+      if (breakup.candidate_decision !== 'accepted') return res.status(409).json({ error: 'Cannot upload offer letter - candidate has not signed the CTC breakup.' });
+      if (breakup.r2_decision !== 'approved') return res.status(409).json({ error: 'Cannot upload offer letter - Recruiter 2 has not cleared the package.' });
+      if (breakup.admin_decision !== 'approved') {
+        // Approver branch - if HR admin forwarded, all approvers must be approved
+        const ap = await pool.query(`SELECT status FROM ctc_approvers WHERE application_id = $1`, [app.id]);
+        if (!ap.rows.length || ap.rows.some((r) => r.status !== 'approved')) {
+          return res.status(409).json({ error: 'Cannot upload offer letter - HR Admin / approvers have not approved.' });
+        }
+      }
+    }
+
     const filePath = `/uploads/offers/${req.file.filename}`;
     const validity = Number(req.body?.validity_days || 14);
     const ins = await pool.query(
       `INSERT INTO offer_letters (application_id, file_path, file_name, uploaded_by_email, validity_days, expires_at)
-       VALUES ($1, $2, $3, $4, $5, NOW() + ($5 || ' days')::interval) RETURNING *`,
+       VALUES ($1, $2, $3, $4, $5, NOW() + ($5::int || ' days')::interval) RETURNING *`,
       [app.id, filePath, req.file.originalname, req.user.email, validity]
     );
 
@@ -69,7 +111,7 @@ router.post('/:applicationId/upload', hrAny, upload.single('file'), async (req, 
       eventType: 'offer.released',
       actorEmail: req.user.email,
       actorRole: req.user.role,
-      summary: `Offer letter uploaded — valid for ${validity} days`,
+      summary: `Offer letter uploaded  valid for ${validity} days`,
       payload: { offer_letter_id: ins.rows[0].id, file_name: req.file.originalname },
       fromState: app.status,
       toState: 'SignaturePending',
@@ -77,7 +119,7 @@ router.post('/:applicationId/upload', hrAny, upload.single('file'), async (req, 
 
     if (app.candidate_email) {
       sendEmail(app.candidate_email,
-        `Your offer letter is ready — ${app.job_title || 'Premier Energies'}`,
+        `Your offer letter is ready  ${app.job_title || 'Premier Energies'}`,
         offerLetterReadyEmail({ candidateName: app.candidate_name, jobTitle: app.job_title })
       ).catch(() => {});
     }
@@ -165,7 +207,7 @@ router.post('/me/sign', candidateOnly, async (req, res) => {
       actorRole: 'applicant',
       summary: decision === 'accepted'
         ? `Candidate digitally signed and accepted the offer`
-        : `Candidate ${decision} the offer${decision_notes ? ` — ${decision_notes}` : ''}`,
+        : `Candidate ${decision} the offer${decision_notes ? `  ${decision_notes}` : ''}`,
       payload: { ip, decision, notes: decision_notes },
       toState: newStatus,
     });
@@ -178,7 +220,7 @@ router.post('/me/sign', candidateOnly, async (req, res) => {
         jobTitle: offer.job_title,
         outcome: newStatus,
       });
-      sendEmail(stakeholders, `${offer.candidate_name} — ${newStatus}`, html).catch(() => {});
+      sendEmail(stakeholders, `${offer.candidate_name}  ${newStatus}`, html).catch(() => {});
     }
 
     res.json({ ok: true, status: newStatus });
@@ -261,8 +303,8 @@ router.post('/:applicationId/joining-outcome', hrAny, async (req, res) => {
       actorEmail: req.user.email,
       actorRole: req.user.role,
       summary: outcome === 'joined' ? `Candidate joined`
-              : outcome === 'postpone' ? `Joining postponed${reason ? ` — ${reason}` : ''}`
-              : `Marked dropout${reason ? ` — ${reason}` : ''}`,
+              : outcome === 'postpone' ? `Joining postponed${reason ? `  ${reason}` : ''}`
+              : `Marked dropout${reason ? `  ${reason}` : ''}`,
       payload: { outcome, reason },
       toState: newStatus,
     });

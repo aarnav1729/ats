@@ -2,6 +2,7 @@ import { Router } from 'express';
 import pool from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.js';
+import { logTimeline } from '../services/timeline.js';
 import { sendNotificationEmail, sendStatusUpdateEmail } from '../services/email.js';
 import { parseResume, matchCandidateToJobs } from '../services/ai.js';
 import multer from 'multer';
@@ -54,6 +55,15 @@ const DEFAULT_SELECTED_DOCUMENTS = [
     stage: 'before_offer_release',
     document_name: 'Offer Letter or Employment Proof',
     description: 'Upload either your current offer letter, appointment letter, or another employment proof document.',
+  },
+  {
+    // Resignation acceptance from current employer - explicitly seeded so
+    // recruiter doesn't have to remember to request it. Required at the
+    // before-joining stage so the candidate has time to send the email
+    // and get HR/manager confirmation.
+    stage: 'before_joining',
+    document_name: 'Resignation Acceptance',
+    description: 'Upload the resignation acceptance email or letter from your current employer (HR or manager). This confirms your last working day.',
   },
 ];
 
@@ -346,13 +356,14 @@ function normalizeApplicationInput(input, actorEmail) {
 
 async function createApplicationRecord(input, actorEmail) {
   const payload = normalizeApplicationInput(input, actorEmail);
+  const allowDuplicate = coerceBoolean(input.allow_duplicate || input.continue_anyway || input.force_duplicate);
 
   if (!payload.candidate_name || !payload.candidate_email) {
     throw new Error('candidate_name and candidate_email are required');
   }
 
   if (!payload.source) {
-    throw new Error('source is required — specify how this candidate was sourced');
+    throw new Error('source is required - specify how this candidate was sourced');
   }
 
   if (payload.candidate_phone) {
@@ -374,31 +385,73 @@ async function createApplicationRecord(input, actorEmail) {
     }
   }
 
+  if (payload.ats_job_id && (!payload.no_of_rounds || !payload.interviewers || !payload.secondary_recruiter_email)) {
+    const jobDefaults = await pool.query(
+      `SELECT interviewer_emails, hiring_flow, secondary_recruiter_email
+       FROM jobs
+       WHERE job_id = $1 AND active_flag = true
+       LIMIT 1`,
+      [payload.ats_job_id]
+    );
+    const job = jobDefaults.rows[0];
+    if (job) {
+      const roundCount = inferJobRoundCount(job);
+      const jobInterviewers = normalizeObjectInput(job.interviewer_emails);
+      payload.no_of_rounds = payload.no_of_rounds || roundCount;
+      payload.interviewers = payload.interviewers || Array.from({ length: roundCount }, (_, index) => {
+        const roundNumber = index + 1;
+        return normalizeArrayInput(
+          jobInterviewers[roundNumber]
+          ?? jobInterviewers[String(roundNumber)]
+          ?? jobInterviewers[`Round${roundNumber}`]
+        );
+      });
+      payload.secondary_recruiter_email = payload.secondary_recruiter_email || job.secondary_recruiter_email || null;
+    }
+  }
+
   // Same-job duplicate check (block)
+  let forcedDuplicate = null;
   if (payload.ats_job_id) {
     const duplicateCheck = await pool.query(
-      `SELECT id, application_id FROM applications
+      `SELECT id, application_id, uploaded_by, created_by, candidate_email, candidate_phone, ats_job_id
+       FROM applications
        WHERE active_flag = true AND ats_job_id = $1
          AND (candidate_email = $2 OR ($3::text IS NOT NULL AND candidate_phone = $3))`,
       [payload.ats_job_id, payload.candidate_email, payload.candidate_phone]
     );
     if (duplicateCheck.rows.length > 0) {
-      return { duplicate: duplicateCheck.rows[0], payload };
+      if (allowDuplicate) {
+        forcedDuplicate = duplicateCheck.rows[0];
+      } else {
+        return { duplicate: duplicateCheck.rows[0], payload };
+      }
     }
   }
 
   // Cross-job duplicate detection by phone (flag, don't block)
   let isDuplicate = false;
   let duplicateOfId = null;
+  let duplicateSource = forcedDuplicate;
   if (payload.candidate_phone) {
     const crossDupe = await pool.query(
-      `SELECT id FROM applications WHERE active_flag = true AND candidate_phone = $1 LIMIT 1`,
+      `SELECT id, application_id, uploaded_by, created_by, candidate_email, candidate_phone, ats_job_id
+       FROM applications
+       WHERE active_flag = true AND candidate_phone = $1
+       ORDER BY created_at ASC
+       LIMIT 1`,
       [payload.candidate_phone]
     );
     if (crossDupe.rows.length > 0) {
       isDuplicate = true;
       duplicateOfId = crossDupe.rows[0].id;
+      duplicateSource = crossDupe.rows[0];
     }
+  }
+  if (forcedDuplicate) {
+    isDuplicate = true;
+    duplicateOfId = forcedDuplicate.id;
+    duplicateSource = forcedDuplicate;
   }
 
   const applicationId = await generateApplicationId(payload.ats_job_id);
@@ -433,14 +486,17 @@ async function createApplicationRecord(input, actorEmail) {
       talent_pool_expires_at,
       created_by,
       uploaded_by,
-      dob,
-      is_duplicate,
-      duplicate_of_id
-    ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
-      $11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-      $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
-    )
+	      dob,
+	      no_of_rounds,
+	      interviewers,
+	      secondary_recruiter_email,
+	      is_duplicate,
+	      duplicate_of_id
+	    ) VALUES (
+	      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
+	      $11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
+	      $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35
+	    )
     RETURNING *`,
     [
       applicationId,
@@ -471,14 +527,49 @@ async function createApplicationRecord(input, actorEmail) {
       payload.talent_pool_only,
       payload.talent_pool_expires_at,
       payload.created_by,
-      payload.uploaded_by,
-      payload.dob,
-      isDuplicate,
-      duplicateOfId,
-    ]
+	      payload.uploaded_by,
+	      payload.dob,
+	      payload.no_of_rounds || null,
+	      JSON.stringify(payload.interviewers || []),
+	      payload.secondary_recruiter_email || null,
+	      isDuplicate,
+	      duplicateOfId,
+	    ]
   );
 
-  return { row: result.rows[0], payload, isDuplicate };
+  const created = result.rows[0];
+  if (isDuplicate && duplicateSource?.id) {
+    await pool.query(
+      `INSERT INTO duplicate_upload_audit (
+        original_application_id,
+        duplicate_application_id,
+        original_uploaded_by,
+        duplicate_uploaded_by,
+        original_created_by,
+        duplicate_created_by,
+        match_type,
+        match_value,
+        original_ats_job_id,
+        duplicate_ats_job_id
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        duplicateSource.id,
+        created.id,
+        duplicateSource.uploaded_by || null,
+        payload.uploaded_by || actorEmail || null,
+        duplicateSource.created_by || null,
+        payload.created_by || actorEmail || null,
+        forcedDuplicate ? 'same_job_email_or_phone' : 'cross_job_phone',
+        forcedDuplicate
+          ? (payload.candidate_email || payload.candidate_phone || '')
+          : (payload.candidate_phone || ''),
+        duplicateSource.ats_job_id || null,
+        created.ats_job_id || null,
+      ]
+    );
+  }
+
+  return { row: created, payload, isDuplicate };
 }
 
 async function softDeactivateApplication(id, actorEmail, reason = 'Removed from active workflows') {
@@ -580,6 +671,16 @@ function getInterviewStageIndices(hiringFlow) {
 
   const fallbackIndices = [2, 3, 4].filter((index) => index < stages.length);
   return uniqueNumbers([...interviewLikeIndices, ...fallbackIndices]).sort((a, b) => a - b);
+}
+
+function inferJobRoundCount(job = {}) {
+  const assignments = normalizeObjectInput(job.interviewer_emails);
+  const assignmentCount = Object.keys(assignments).reduce((max, key) => {
+    const numeric = Number(String(key).replace(/^Round/i, ''));
+    return Number.isInteger(numeric) && numeric > 0 ? Math.max(max, numeric) : max;
+  }, 0);
+  const stageCount = getInterviewStageIndices(job.hiring_flow).length;
+  return Math.max(assignmentCount, stageCount, 1);
 }
 
 function resolveRoundAssignments(application, job, roundNumber, status) {
@@ -730,8 +831,36 @@ async function transitionApplicationStatus(client, applicationId, nextStatus, ac
   const updateParts = ['status = $1', 'updated_at = NOW()'];
 
   if (nextStatus === 'AwaitingHODResponse') {
-    const requestedRounds = Number(options.noOfRounds ?? current.no_of_rounds ?? 0);
-    const requestedInterviewers = normalizeArrayInput(options.interviewers ?? current.interviewers);
+    let requestedRounds = Number(options.noOfRounds ?? current.no_of_rounds ?? 0);
+    let requestedInterviewers = normalizeArrayInput(options.interviewers ?? current.interviewers);
+
+    if (requestedRounds === 0 || requestedInterviewers.length === 0) {
+      const jobResult = await client.query(
+        `SELECT interviewer_emails, hiring_flow
+         FROM jobs
+         WHERE job_id = $1 AND active_flag = true
+         LIMIT 1`,
+        [current.ats_job_id]
+      );
+      const job = jobResult.rows[0];
+      if (job) {
+        if (requestedRounds === 0) {
+          requestedRounds = inferJobRoundCount(job);
+        }
+        if (requestedInterviewers.length === 0) {
+          const jobInterviewers = normalizeObjectInput(job.interviewer_emails);
+          const hiringFlow = normalizeArrayInput(job.hiring_flow);
+          requestedInterviewers = [];
+          for (let i = 0; i < requestedRounds; i++) {
+            const flowIndex = Math.min(i, hiringFlow.length - 1);
+            requestedInterviewers.push(jobInterviewers[i] || jobInterviewers[flowIndex] || jobInterviewers[`Round${i + 1}`] || []);
+          }
+        }
+      } else if (requestedRounds === 0) {
+        requestedRounds = 3;
+      }
+    }
+
     const firstRoundOwners = normalizeArrayInput(requestedInterviewers[0]);
 
     if (!Number.isInteger(requestedRounds) || requestedRounds < 1) {
@@ -781,12 +910,22 @@ async function transitionApplicationStatus(client, applicationId, nextStatus, ac
   }
 
   if (PREBOARDING_STATUSES.includes(nextStatus)) {
-    await client.query(
-      `INSERT INTO users (email, name, role, phone, created_by)
-       VALUES ($1, $2, 'applicant', $3, $4)
-       ON CONFLICT (email) DO NOTHING`,
-      [updated.candidate_email, updated.candidate_name, updated.candidate_phone, actorEmail || null]
-    );
+    // Seed the candidate as an applicant user so they can OTP-login to the
+    // candidate portal. The users table doesn't carry `created_by` so we
+    // only insert the columns that actually exist (email/name/role/phone).
+    // Wrapped in try/catch so a stale-schema DB never blocks the transition.
+    try {
+      await client.query(
+        `INSERT INTO users (email, name, role, phone)
+         VALUES ($1, $2, 'applicant', $3)
+         ON CONFLICT (email) DO UPDATE
+           SET name  = COALESCE(users.name,  EXCLUDED.name),
+               phone = COALESCE(users.phone, EXCLUDED.phone)`,
+        [updated.candidate_email, updated.candidate_name, updated.candidate_phone]
+      );
+    } catch (seedErr) {
+      console.error('Applicant seed warning (non-blocking):', seedErr.message);
+    }
   }
 
   if (nextStatus === 'Selected' || nextStatus === 'OfferInProcess') {
@@ -1095,13 +1234,48 @@ router.get('/duplicates', adminOrRecruiter, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /duplicate-audit - Admin-visible history of duplicate uploads
+// ---------------------------------------------------------------------------
+router.get('/duplicate-audit', requireRole('hr_admin'), async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const result = await pool.query(
+      `SELECT dua.*,
+              orig.application_id AS original_application_code,
+              orig.candidate_name AS original_candidate_name,
+              orig.candidate_email AS original_candidate_email,
+              dup.application_id AS duplicate_application_code,
+              dup.candidate_name AS duplicate_candidate_name,
+              dup.candidate_email AS duplicate_candidate_email,
+              oj.job_title AS original_job_title,
+              dj.job_title AS duplicate_job_title
+       FROM duplicate_upload_audit dua
+       LEFT JOIN applications orig ON dua.original_application_id = orig.id
+       LEFT JOIN applications dup ON dua.duplicate_application_id = dup.id
+       LEFT JOIN jobs oj ON dua.original_ats_job_id = oj.job_id
+       LEFT JOIN jobs dj ON dua.duplicate_ats_job_id = dj.job_id
+       ORDER BY dua.created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    res.json({ data: result.rows, count: result.rows.length });
+  } catch (err) {
+    console.error('Duplicate audit error:', err);
+    res.status(500).json({ error: 'Failed to fetch duplicate audit' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /:id - Single application with interview_feedback and candidate_documents
 // ---------------------------------------------------------------------------
 router.get('/:id', adminOrRecruiter, async (req, res) => {
   try {
     const { id } = req.params;
     const appResult = await pool.query(
-      `SELECT a.*, j.job_title, j.department_id, j.business_unit_id
+      `SELECT a.*, j.job_title, j.department_id, j.business_unit_id,
+              j.interviewer_emails AS job_interviewer_emails,
+              j.hiring_flow AS job_hiring_flow,
+              j.secondary_recruiter_email AS job_secondary_recruiter_email
        FROM applications a
        LEFT JOIN jobs j ON a.ats_job_id = j.job_id
        WHERE a.id = $1 AND a.active_flag = true`,
@@ -1153,6 +1327,26 @@ router.post('/', adminOrRecruiter, async (req, res) => {
       afterState: row,
     });
 
+    await logTimeline({
+      entityType: 'application',
+      entityId: row.id,
+      eventType: 'application.created',
+      actorEmail: req.user?.email,
+      actorRole: req.user?.role || 'hr_recruiter',
+      fromState: null,
+      toState: row.status,
+      stage: row.status,
+      summary: `Candidate created by ${req.user?.email || 'system'}`,
+      payload: {
+        application_id: row.application_id,
+        candidate_name: row.candidate_name,
+        candidate_email: row.candidate_email,
+        source: row.source,
+        ats_job_id: row.ats_job_id,
+      },
+      occurredAt: row.created_at,
+    });
+
     if (payload.recruiter_email) {
       await sendNotificationEmail({
         to: payload.recruiter_email,
@@ -1161,7 +1355,7 @@ router.post('/', adminOrRecruiter, async (req, res) => {
       }).catch(err => console.error('Notification email error:', err));
     }
 
-    res.status(201).json({ ...row, _warnings: isDuplicate ? ['This phone number exists in another application — possible duplicate candidate'] : [] });
+    res.status(201).json({ ...row, _warnings: isDuplicate ? ['This phone number exists in another application  possible duplicate candidate'] : [] });
   } catch (err) {
     console.error('Create application error:', err);
     const statusCode = (err.message.includes('required') || err.message.includes('10 digits')) ? 400 : 500;
@@ -1217,6 +1411,7 @@ router.put('/:id', adminOrRecruiter, async (req, res) => {
       consultant_code: 'consultant_code',
       referral_flag: 'referral_flag',
       recruiter_email: 'recruiter_email',
+      secondary_recruiter_email: 'secondary_recruiter_email',
       talent_pool_only: 'talent_pool_only',
       ats_job_id: 'ats_job_id',
       status: 'status',
@@ -1327,12 +1522,6 @@ router.put('/:id', adminOrRecruiter, async (req, res) => {
 router.put('/:id/interview-plan', adminOrRecruiter, async (req, res) => {
   const client = await pool.connect();
   try {
-    const noOfRounds = Math.max(1, Math.min(3, Number(req.body.no_of_rounds || 1)));
-    const interviewers = Array.isArray(req.body.interviewers) ? req.body.interviewers : [];
-    if (!Array.isArray(interviewers[0]) || interviewers[0].length === 0) {
-      return res.status(400).json({ error: 'At least one round 1 reviewer is required' });
-    }
-
     await client.query('BEGIN');
     const existingResult = await client.query(
       `SELECT * FROM applications WHERE id = $1 AND active_flag = true`,
@@ -1344,6 +1533,35 @@ router.put('/:id/interview-plan', adminOrRecruiter, async (req, res) => {
     }
 
     const existing = existingResult.rows[0];
+    let noOfRounds = Math.max(1, Math.min(3, Number(req.body.no_of_rounds || existing.no_of_rounds || 1)));
+    let interviewers = Array.isArray(req.body.interviewers) ? req.body.interviewers : [];
+
+    if (interviewers.length === 0 || !Array.isArray(interviewers[0]) || interviewers[0].length === 0) {
+      const jobResult = await client.query(
+        `SELECT interviewer_emails, hiring_flow
+         FROM jobs
+         WHERE job_id = $1 AND active_flag = true
+         LIMIT 1`,
+        [existing.ats_job_id]
+      );
+      const job = jobResult.rows[0];
+      if (job) {
+        noOfRounds = Number(req.body.no_of_rounds) || inferJobRoundCount(job) || noOfRounds;
+        const jobInterviewers = normalizeObjectInput(job.interviewer_emails);
+        const hiringFlow = normalizeArrayInput(job.hiring_flow);
+        interviewers = [];
+        for (let i = 0; i < noOfRounds; i++) {
+          const flowIndex = Math.min(i, hiringFlow.length - 1);
+          interviewers.push(jobInterviewers[i] || jobInterviewers[flowIndex] || jobInterviewers[`Round${i + 1}`] || []);
+        }
+      }
+    }
+
+    if (!Array.isArray(interviewers[0]) || interviewers[0].length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'At least one round 1 reviewer is required' });
+    }
+
     const nextStatus = ['InQueue', 'Applied', 'Shortlisted', 'AwaitingHODResponse'].includes(existing.status)
       ? 'AwaitingHODResponse'
       : 'AwaitingInterviewScheduling';
@@ -1464,6 +1682,27 @@ router.put('/:id/status', adminOrRecruiter, async (req, res) => {
         task_assignments: transition.taskAssignments,
       },
       performed_by: req.user?.id,
+    });
+
+    const isRejection = ['HRRejected', 'HODRejected', 'Round1Rejected', 'Round2Rejected', 'Round3Rejected'].includes(status);
+    await logTimeline({
+      entityType: 'application',
+      entityId: id,
+      eventType: isRejection ? 'application.rejected' : 'application.status_changed',
+      actorEmail: req.user?.email,
+      actorRole: req.user?.role || 'hr_recruiter',
+      fromState: transition.previousStatus,
+      toState: status,
+      stage: status,
+      summary: isRejection
+        ? `Rejected: ${rejection_reason || 'No reason provided'}`
+        : `Status changed from ${transition.previousStatus} to ${status}`,
+      payload: {
+        application_id: transition.application.application_id,
+        comment,
+        rejection_reason: rejection_reason || null,
+        task_assignments: transition.taskAssignments,
+      },
     });
 
     res.json(transition.application);

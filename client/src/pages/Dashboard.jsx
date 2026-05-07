@@ -105,13 +105,13 @@ function DemoProgressModal({ open, onClose, currentStep, demoRunning, demoError,
             {[
               ['Requisition', demoStory.requisition?.route, demoStory.requisition?.requisition_id || 'Demo requisition'],
               ['Job', demoStory.job?.route, demoStory.job?.job_id || 'Demo job'],
-              ['Selected', demoStory.stage_map?.Selected?.route, demoStory.stage_map?.Selected?.candidate_name || '—'],
-              ['Joined', demoStory.stage_map?.Joined?.route, demoStory.stage_map?.Joined?.candidate_name || '—'],
+              ['Selected', demoStory.stage_map?.Selected?.route, demoStory.stage_map?.Selected?.candidate_name || ''],
+              ['Joined', demoStory.stage_map?.Joined?.route, demoStory.stage_map?.Joined?.candidate_name || ''],
             ].map(([label, route, val]) => (
               <div key={label} className="rounded-md border border-line bg-surface-muted px-3 py-2">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
                 <p className="mt-0.5 text-sm font-medium text-slate-900">{val}</p>
-                <p className="text-xs text-slate-400">{route || '—'}</p>
+                <p className="text-xs text-slate-400">{route || ''}</p>
               </div>
             ))}
           </div>
@@ -422,11 +422,11 @@ export default function Dashboard() {
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             {[
               { label: 'Req created', sub: 'Start', value: null },
-              { label: 'Approved', sub: `${tatPhases.requisition_tat?.avg_req_to_approval_days ?? '—'}d`, value: tatPhases.requisition_tat?.avg_req_to_approval_days },
-              { label: 'Job created', sub: `${tatPhases.job_creation_tat?.avg_approval_to_job_days ?? '—'}d`, value: tatPhases.job_creation_tat?.avg_approval_to_job_days },
-              { label: '1st candidate', sub: `${tatPhases.candidate_milestone_tat?.avg_days_to_first_candidate ?? '—'}d`, value: tatPhases.candidate_milestone_tat?.avg_days_to_first_candidate },
-              { label: '5th candidate', sub: `${tatPhases.candidate_milestone_tat?.avg_days_to_fifth_candidate ?? '—'}d`, value: tatPhases.candidate_milestone_tat?.avg_days_to_fifth_candidate },
-              { label: '10th candidate', sub: `${tatPhases.candidate_milestone_tat?.avg_days_to_tenth_candidate ?? '—'}d`, value: tatPhases.candidate_milestone_tat?.avg_days_to_tenth_candidate },
+              { label: 'Approved', sub: `${tatPhases.requisition_tat?.avg_req_to_approval_days ?? ''}d`, value: tatPhases.requisition_tat?.avg_req_to_approval_days },
+              { label: 'Job created', sub: `${tatPhases.job_creation_tat?.avg_approval_to_job_days ?? ''}d`, value: tatPhases.job_creation_tat?.avg_approval_to_job_days },
+              { label: '1st candidate', sub: `${tatPhases.candidate_milestone_tat?.avg_days_to_first_candidate ?? ''}d`, value: tatPhases.candidate_milestone_tat?.avg_days_to_first_candidate },
+              { label: '5th candidate', sub: `${tatPhases.candidate_milestone_tat?.avg_days_to_fifth_candidate ?? ''}d`, value: tatPhases.candidate_milestone_tat?.avg_days_to_fifth_candidate },
+              { label: '10th candidate', sub: `${tatPhases.candidate_milestone_tat?.avg_days_to_tenth_candidate ?? ''}d`, value: tatPhases.candidate_milestone_tat?.avg_days_to_tenth_candidate },
             ].map((phase, i) => (
               <div key={phase.label} className="rounded-xl border border-line bg-slate-50 px-3 py-3">
                 <div className="flex items-center justify-between gap-3">
@@ -571,7 +571,7 @@ export default function Dashboard() {
                         entry?.route ? 'border-line bg-white hover:bg-surface-hover' : 'border-dashed border-line bg-surface-muted'
                       }`}>
                       <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-500">{stage}</p>
-                      <p className="mt-0.5 font-medium text-slate-900">{entry?.candidate_name || '—'}</p>
+                      <p className="mt-0.5 font-medium text-slate-900">{entry?.candidate_name || ''}</p>
                     </button>
                   );
                 })}

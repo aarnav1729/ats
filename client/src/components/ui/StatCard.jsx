@@ -1,6 +1,6 @@
 // Premium StatCard. Gradient accent bar at the top, hover lift + glow,
 // tabular figures so trailing digits don't shift. Used everywhere a KPI is
-// shown — Dashboard, MIS tabs, drilldowns.
+// shown  Dashboard, MIS tabs, drilldowns.
 
 const TONE_GRAD = {
   brand: 'linear-gradient(90deg, #1e3a8a, #0c8da3)',
@@ -45,7 +45,7 @@ export default function StatCard({
         <div className="min-w-0">
           <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</p>
           <p className="mt-1.5 text-[26px] font-bold leading-[1.05] tracking-tight text-slate-900" style={{ fontVariantNumeric: 'tabular-nums' }}>
-            {value ?? <span className="text-slate-300">—</span>}
+            {value ?? <span className="text-slate-300"></span>}
           </p>
           {hint && <p className="mt-1 text-xs text-slate-500 leading-relaxed">{hint}</p>}
         </div>

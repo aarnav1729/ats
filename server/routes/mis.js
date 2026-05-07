@@ -1510,7 +1510,7 @@ router.get('/detailed-open-positions', adminOrRecruiter, async (req, res) => {
 
 // ───────────────────────────────────────────────────────────────────────────
 // Raw export: one row per application with every field from requisition
-// creation through current state — requisition, job, candidate, application,
+// creation through current state  requisition, job, candidate, application,
 // interview feedback, clearance, offer, join. Used by "Raw Data" tab for
 // MIS exports. Every field is exposed as a column; nested JSON is flattened
 // to comma-separated scalars where useful.

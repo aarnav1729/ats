@@ -1,4 +1,4 @@
-// Lightweight canvas signature pad — premium feel without an e-sign provider.
+// Lightweight canvas signature pad  premium feel without an e-sign provider.
 // Captures a base64 PNG of the signature plus IP/timestamp attestation.
 
 import { useEffect, useRef, useState } from 'react';

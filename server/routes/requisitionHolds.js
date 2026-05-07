@@ -99,7 +99,7 @@ router.post('/:requisitionId', hrAdminOnly, async (req, res) => {
     // Fire-and-forget notify
     const htmlBody = requisitionOnHoldEmail({
       requisitionId: requisition.requisition_id,
-      jobTitle: requisition.job_title || '—',
+      jobTitle: requisition.job_title || '',
       reason,
       notes: notes || '',
       placedBy: req.user.email,
@@ -109,7 +109,7 @@ router.post('/:requisitionId', hrAdminOnly, async (req, res) => {
         sendNotificationEmail({
           to,
           title: `Requisition ${requisition.requisition_id} placed on hold`,
-          message: `${requisition.job_title || requisition.requisition_id} is on hold — ${reason}`,
+          message: `${requisition.job_title || requisition.requisition_id} is on hold  ${reason}`,
           htmlBody,
           actionUrl: '/requisitions',
         }).catch(() => {})
@@ -194,7 +194,7 @@ router.post('/:requisitionId/release', hrAdminOnly, async (req, res) => {
     const notify = Array.isArray(hold.notified_emails) ? hold.notified_emails : [];
     const htmlBody = requisitionReleasedEmail({
       requisitionId: requisition.requisition_id,
-      jobTitle: requisition.job_title || '—',
+      jobTitle: requisition.job_title || '',
       elapsedDays: (elapsed / 86400).toFixed(2),
       releasedBy: req.user.email,
     });

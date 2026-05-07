@@ -28,11 +28,14 @@ router.get('/:appId/clearance', async (req, res) => {
 router.post('/:appId/clearance', requireRole('hr_admin', 'hr_recruiter'), async (req, res) => {
   try {
     const { appId } = req.params;
-    const { ctc_data, ctc_text, aop_inline, aop_exceeded_amount } = req.body;
+    const { ctc_data, ctc_text, aop_inline, aop_exceeded_amount, secondary_recruiter_email } = req.body;
 
     // Check if application exists and has documents uploaded
     const appResult = await pool.query(
-      'SELECT a.*, j.secondary_recruiter_email as job_secondary_recruiter FROM applications a LEFT JOIN jobs j ON a.job_id = j.id WHERE a.id = $1',
+      `SELECT a.*, j.secondary_recruiter_email AS job_secondary_recruiter
+       FROM applications a
+       LEFT JOIN jobs j ON a.ats_job_id = j.job_id
+       WHERE a.id = $1`,
       [appId]
     );
     if (appResult.rows.length === 0) {
@@ -40,7 +43,10 @@ router.post('/:appId/clearance', requireRole('hr_admin', 'hr_recruiter'), async 
     }
 
     const app = appResult.rows[0];
-    const secondaryRecruiter = app.secondary_recruiter_email || app.job_secondary_recruiter;
+    const bodySecondaryRecruiter = String(secondary_recruiter_email || '').trim().toLowerCase();
+    const secondaryRecruiter = [app.secondary_recruiter_email, bodySecondaryRecruiter, app.job_secondary_recruiter]
+      .map((email) => String(email || '').trim().toLowerCase())
+      .find(Boolean);
 
     // Check if secondary recruiter exists
     const needsSecondary = !secondaryRecruiter;
@@ -49,6 +55,13 @@ router.post('/:appId/clearance', requireRole('hr_admin', 'hr_recruiter'), async 
         error: 'Secondary recruiter not assigned. Please add a secondary recruiter before proceeding with clearance.',
         needs_secondary_recruiter: true,
       });
+    }
+
+    if (bodySecondaryRecruiter && !app.secondary_recruiter_email) {
+      await pool.query(
+        'UPDATE applications SET secondary_recruiter_email = $1, updated_at = NOW() WHERE id = $2',
+        [bodySecondaryRecruiter, appId]
+      );
     }
 
     // Upsert clearance record

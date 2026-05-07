@@ -19,7 +19,7 @@ function normalizePhone(p) {
   return String(p || '').replace(/\D/g, '').slice(-12);
 }
 
-// GET /blacklist — list current bans
+// GET /blacklist  list current bans
 router.get('/', adminOrRecruiter, async (req, res) => {
   try {
     const rows = await pool.query(
@@ -34,7 +34,7 @@ router.get('/', adminOrRecruiter, async (req, res) => {
   }
 });
 
-// POST /blacklist/check — { phone } → { blacklisted, reason }
+// POST /blacklist/check  { phone } → { blacklisted, reason }
 // Used by /public/jobs/:id/apply to reject banned phones.
 router.post('/check', async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
@@ -47,7 +47,7 @@ router.post('/check', async (req, res) => {
   res.json({ blacklisted: r.rows.length > 0, reason: r.rows[0]?.reason || null });
 });
 
-// POST /blacklist — { application_id, reason }
+// POST /blacklist  { application_id, reason }
 router.post('/', adminOrRecruiter, async (req, res) => {
   try {
     const { application_id, reason } = req.body || {};
@@ -154,7 +154,7 @@ router.post('/', adminOrRecruiter, async (req, res) => {
   }
 });
 
-// DELETE /blacklist/:phone — lift a ban (admin only)
+// DELETE /blacklist/:phone  lift a ban (admin only)
 router.delete('/:phone', requireRole('hr_admin'), async (req, res) => {
   try {
     const phone = normalizePhone(req.params.phone);

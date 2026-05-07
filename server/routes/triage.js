@@ -1,7 +1,7 @@
 // Triage actions for the candidate row + detail view:
-//   POST /triage/:id/move-to-job          — move candidate to another job (status → Applied there)
-//   POST /triage/:id/move-to-talent-pool  — park candidate, retain history
-//   POST /triage/:id/shortlist            — set status, optionally override rounds + interviewers
+//   POST /triage/:id/move-to-job           move candidate to another job (status → Applied there)
+//   POST /triage/:id/move-to-talent-pool   park candidate, retain history
+//   POST /triage/:id/shortlist             set status, optionally override rounds + interviewers
 //
 // Blacklist already lives in routes/blacklist.js.
 
@@ -72,7 +72,7 @@ router.post('/:id/move-to-talent-pool', adminOrRecruiter, async (req, res) => {
       eventType: 'application.moved_to_talent_pool',
       actorEmail: req.user.email,
       actorRole: req.user.role,
-      summary: `Moved to talent pool from ${app.job_title || app.ats_job_id}${reason ? ` — ${reason}` : ''}`,
+      summary: `Moved to talent pool from ${app.job_title || app.ats_job_id}${reason ? `  ${reason}` : ''}`,
       payload: { from_job_id: app.ats_job_id, reason },
       fromState: app.status,
       toState: 'TalentPool',
@@ -219,7 +219,7 @@ router.post('/:id/shortlist', adminOrRecruiter, async (req, res) => {
         roundLabel: 'Round 1',
         applicationId: app.application_id,
       });
-      await sendEmail(email, `Candidate ready for review — ${app.candidate_name}`, html).catch(() => {});
+      await sendEmail(email, `Candidate ready for review  ${app.candidate_name}`, html).catch(() => {});
     }
 
     res.json({ ok: true });
@@ -260,7 +260,7 @@ router.post('/:id/hr-reject', adminOrRecruiter, async (req, res) => {
       eventType: 'application.hr_rejected',
       actorEmail: req.user.email,
       actorRole: req.user.role,
-      summary: `HR rejected — ${reason}`,
+      summary: `HR rejected  ${reason}`,
       payload: { reason },
       fromState: app.status,
       toState: 'HRRejected',
@@ -281,7 +281,7 @@ router.post('/:id/hr-reject', adminOrRecruiter, async (req, res) => {
   }
 });
 
-// ── Helper for the move-to-job picker — searchable jobs list ──────────────
+// ── Helper for the move-to-job picker  searchable jobs list ──────────────
 router.get('/jobs/searchable', adminOrRecruiter, async (req, res) => {
   const q = String(req.query.q || '').trim();
   const params = [];
@@ -305,7 +305,7 @@ router.get('/jobs/searchable', adminOrRecruiter, async (req, res) => {
       job_title: row.job_title,
       hr_one_job_id: row.hr_one_job_id,
       recruiter_email: row.recruiter_email,
-      label: `${row.job_title} — ${row.job_id}${row.hr_one_job_id ? ` (HR1: ${row.hr_one_job_id})` : ''} · ${[row.bu_name, row.department_name, row.location_name].filter(Boolean).join(' · ')}`,
+      label: `${row.job_title}  ${row.job_id}${row.hr_one_job_id ? ` (HR1: ${row.hr_one_job_id})` : ''} · ${[row.bu_name, row.department_name, row.location_name].filter(Boolean).join(' · ')}`,
       status: row.status,
     })),
   });

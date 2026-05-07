@@ -3,6 +3,20 @@ import { auditAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import { PageHeader, StatCard, SectionCard } from '../components/ui';
 
+// Format seconds to human readable duration
+function fmtDuration(secs) {
+  if (!secs || secs <= 0) return '-';
+  if (secs < 60) return `${secs}s`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+  return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
+}
+
+// Format IST date for display
+function fmtIST(isoStr) {
+  if (!isoStr) return '';
+  return new Date(isoStr).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+}
+
 // HR-friendly field labels (override machine names where needed)
 const FIELD_LABEL = {
   status: 'Status',
@@ -35,14 +49,14 @@ const ACTION_VERB = {
   read: 'viewed',
 };
 function prettyValue(val) {
-  if (val === null || val === undefined || val === '') return '—';
+  if (val === null || val === undefined || val === '') return '';
   if (typeof val === 'boolean') return val ? 'Yes' : 'No';
   if (typeof val === 'object') {
     try {
       const keys = Object.keys(val);
       if (keys.length <= 3) return keys.map((k) => `${k}: ${prettyValue(val[k])}`).join(', ');
       return `${keys.length} fields`;
-    } catch { return '—'; }
+    } catch { return ''; }
   }
   const s = String(val);
   if (s.length > 120) return `${s.slice(0, 117)}…`;
@@ -215,6 +229,8 @@ export default function AuditTrail() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
+  const [loginActivity, setLoginActivity] = useState(null);
+  const [loginLoading, setLoginLoading] = useState(false);
   const [filters, setFilters] = useState({ action_by: '', action_type: '', entity_type: '', date_from: '', date_to: '', field_edited: '' });
 
   const loadData = useCallback(async () => {
@@ -237,7 +253,20 @@ export default function AuditTrail() {
     }
   }, [page, filters]);
 
+  const loadLoginActivity = useCallback(async () => {
+    setLoginLoading(true);
+    try {
+      const res = await auditAPI.loginActivity();
+      setLoginActivity(res.data);
+    } catch {
+      toast.error('Failed to load login activity');
+    } finally {
+      setLoginLoading(false);
+    }
+  }, []);
+
   useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { loadLoginActivity(); }, [loadLoginActivity]);
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -328,6 +357,96 @@ export default function AuditTrail() {
             </div>
           </SectionCard>
         </div>
+      )}
+
+      {/* Login Activity Stats */}
+      {loginActivity && (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <SectionCard title="Most Common Actions (Top 10)">
+              <div className="space-y-2">
+                {(stats?.most_common_actions || []).length === 0 ? (
+                  <p style={{ fontSize: 13, color: 'var(--text-faint)' }}>No action data yet.</p>
+                ) : (
+                  stats.most_common_actions.map((a, i) => (
+                    <div key={a.action_type} className="flex items-center justify-between" style={{ fontSize: 13 }}>
+                      <span style={{ color: 'var(--text-body)' }}>
+                        <span style={{ color: 'var(--text-faint)', marginRight: 8 }}>#{i + 1}</span>
+                        {a.action_type}
+                      </span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{a.count}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </SectionCard>
+            <SectionCard title="Session Duration (Avg per User)">
+              <div className="space-y-2">
+                {(stats?.session_stats || []).length === 0 ? (
+                  <p style={{ fontSize: 13, color: 'var(--text-faint)' }}>No session data yet.</p>
+                ) : (
+                  stats.session_stats.slice(0, 8).map((s) => (
+                    <div key={s.action_by} className="flex items-center justify-between" style={{ fontSize: 13 }}>
+                      <span style={{ color: 'var(--text-body)' }}>{s.action_by}</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{fmtDuration(s.avg_duration_secs)}</span>
+                    </div>
+                  ))
+                )}
+                {stats?.avg_session_duration_secs > 0 && (
+                  <div className="flex items-center justify-between border-t border-slate-200 pt-2 mt-2" style={{ fontSize: 13 }}>
+                    <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>Overall Average</span>
+                    <span style={{ fontWeight: 700, color: 'var(--accent-blue)' }}>{fmtDuration(stats.avg_session_duration_secs)}</span>
+                  </div>
+                )}
+              </div>
+            </SectionCard>
+          </div>
+
+          <SectionCard title="Login Activity - Last 30 Days">
+            <div className="overflow-x-auto">
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--line-subtle)' }}>
+                    <th style={{ textAlign: 'left', padding: '8px 12px', color: 'var(--text-faint)', fontWeight: 600 }}>Name</th>
+                    <th style={{ textAlign: 'left', padding: '8px 12px', color: 'var(--text-faint)', fontWeight: 600 }}>Email</th>
+                    <th style={{ textAlign: 'left', padding: '8px 12px', color: 'var(--text-faint)', fontWeight: 600 }}>Role</th>
+                    <th style={{ textAlign: 'left', padding: '8px 12px', color: 'var(--text-faint)', fontWeight: 600 }}>Last Login</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px', color: 'var(--text-faint)', fontWeight: 600 }}>Total Logins</th>
+                    <th style={{ textAlign: 'right', padding: '8px 12px', color: 'var(--text-faint)', fontWeight: 600 }}>Actions Today</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loginActivity.users.map((u) => (
+                    <tr key={u.email} style={{ borderBottom: '1px solid var(--line-subtle)' }}>
+                      <td style={{ padding: '8px 12px', color: 'var(--text-main)', fontWeight: 500 }}>{u.name || '-'}</td>
+                      <td style={{ padding: '8px 12px', color: 'var(--text-body)' }}>{u.email}</td>
+                      <td style={{ padding: '8px 12px', color: 'var(--text-body)' }}>{u.role || '-'}</td>
+                      <td style={{ padding: '8px 12px', color: 'var(--text-body)' }}>{u.last_login ? fmtIST(u.last_login) : '-'}</td>
+                      <td style={{ padding: '8px 12px', color: 'var(--text-main)', fontWeight: 600, textAlign: 'right' }}>{u.total_logins}</td>
+                      <td style={{ padding: '8px 12px', color: 'var(--text-main)', fontWeight: 600, textAlign: 'right' }}>{u.actions_today}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </SectionCard>
+
+          {/* DAU chart - last 14 days */}
+          <SectionCard title="Daily Active Users (Last 14 Days)">
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 80, marginTop: 8 }}>
+              {(stats?.dau_logins || []).slice(0, 14).reverse().map((d) => {
+                const maxUsers = Math.max(...(stats?.dau_logins || []).map(r => Number(r.users)), 1);
+                const heightPct = (Number(d.users) / maxUsers) * 100;
+                return (
+                  <div key={d.day} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                    <div style={{ width: '100%', background: 'var(--accent-blue)', borderRadius: 3, height: `${heightPct}%`, minHeight: 4 }} title={`${d.users} users`} />
+                    <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>{String(d.day).slice(5, 10)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </SectionCard>
+        </>
       )}
 
       <SectionCard title="Filters">

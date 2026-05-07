@@ -57,7 +57,7 @@ function FactTile({ label, value, sub, tone }) {
   return (
     <div className={`relative px-5 py-4 transition hover:bg-slate-50 before:absolute before:left-0 before:top-3 before:bottom-3 before:w-[3px] before:rounded-r-full ${toneRing}`}>
       <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-slate-900 break-words leading-tight">{value || '—'}</p>
+      <p className="mt-1 text-sm font-semibold text-slate-900 break-words leading-tight">{value || '-'}</p>
       {sub && <p className="mt-0.5 text-[12px] text-slate-500 truncate">{sub}</p>}
     </div>
   );
@@ -117,11 +117,24 @@ export default function InterviewWorkspace() {
   const canCoordinate = (viewAs === 'admin' || viewAs === 'recruiter');
   const canReview = (viewAs === 'admin' || viewAs === 'interviewer');
   const needsSlotSuggestion = useMemo(
-    () => ['AwaitingHODResponse', 'AwaitingInterviewScheduling'].includes(interview?.app_status) || interview?.status === 'review_pending',
+    () => {
+      // Only show slot suggestion when truly needs to suggest (not waiting for HR to confirm)
+      // If slots are already suggested (AwaitingInterviewScheduling), don't show - wait for HR
+      const status = interview?.app_status;
+      return status === 'AwaitingHODResponse' || interview?.status === 'review_pending';
+    },
     [interview?.app_status, interview?.status]
   );
   const canGiveFeedback = useMemo(
-    () => interview?.scheduled_datetime || /^Round\d+$/.test(String(interview?.app_status || '')) || interview?.app_status === 'AwaitingFeedback',
+    () => {
+      // Can give feedback when: scheduled OR in a round OR AwaitingFeedback
+      // But NOT when just waiting for HR to confirm slots
+      const status = interview?.app_status;
+      const hasScheduled = !!interview?.scheduled_datetime;
+      const isInRound = /^Round\d+$/.test(String(status || ''));
+      const isAwaitingFeedback = status === 'AwaitingFeedback';
+      return (hasScheduled || isInRound || isAwaitingFeedback) && status !== 'AwaitingInterviewScheduling';
+    },
     [interview?.app_status, interview?.scheduled_datetime]
   );
   const noShowEnabled = useMemo(() => canMarkNoShow(interview?.scheduled_datetime), [interview?.scheduled_datetime]);
@@ -158,14 +171,14 @@ export default function InterviewWorkspace() {
       try {
         const [interviewRes, reasonsRes] = await Promise.all([
           interviewsAPI.get(id),
-          mastersAPI.list('rejection-reasons', { limit: 200 }).catch(() => ({ data: [] })),
+          mastersAPI.list('rejection-reasons', { limit: 200 }).catch(() => []),
         ]);
         setInterview(interviewRes.data);
         setSlotForm({
           slot1: toDatetimeLocalValue(interviewRes.data?.suggested_interview_datetime1),
           slot2: toDatetimeLocalValue(interviewRes.data?.suggested_interview_datetime2),
         });
-        const items = Array.isArray(reasonsRes.data) ? reasonsRes.data : reasonsRes.data?.items || reasonsRes.data?.data || [];
+        const items = Array.isArray(reasonsRes) ? reasonsRes : reasonsRes?.data || reasonsRes?.items || [];
         setRejectionReasons(items.filter((item) => item.active_flag !== false));
       } catch {
         toast.error('Failed to load reviewer workspace');
@@ -395,10 +408,10 @@ export default function InterviewWorkspace() {
         <dl className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-slate-100">
           <FactTile label="Candidate"
             value={interview.candidate_email}
-            sub={interview.candidate_phone || '—'} />
+            sub={interview.candidate_phone || '-'} />
           <FactTile label="Round"
             value={`Round ${interview.round || interview.round_number || 1} of ${interview.no_of_rounds || '?'}`}
-            sub={interview.app_status || '—'} />
+            sub={interview.app_status || '-'} />
           <FactTile label="Assigned to"
             value={interview.interviewer_email}
             sub={formatDateTime(interview.scheduled_datetime) || 'Not yet scheduled'} />
@@ -411,37 +424,91 @@ export default function InterviewWorkspace() {
 
       <div className="workboard-layout">
         <aside className="workboard-lane workboard-lane-primary">
-          <div className="workspace-card panel-hover">
-            <div className="flex items-center justify-between gap-3">
+          {/* Enhanced Candidate Details Header */}
+          <div className="bg-gradient-to-r from-slate-800 to-slate-700 rounded-2xl p-5 mb-4 text-white">
+            <div className="flex items-center justify-between">
               <div>
-                <h2 className="section-title">1. Candidate Dossier</h2>
-                <p className="mt-1 text-sm text-gray-500">Review the full candidate packet (resume + profile) before proposing time slots or rejecting the profile.</p>
+                <h2 className="text-lg font-bold text-white">{interview.candidate_name || 'Candidate'}</h2>
+                <p className="text-slate-300 text-sm mt-1">{interview.job_title}</p>
+              </div>
+              <div className="text-right">
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  {interview.app_status || 'Pending'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="workspace-card panel-hover">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <h2 className="section-title">Profile Details</h2>
+                <p className="mt-1 text-sm text-gray-500">Key information at a glance</p>
               </div>
               {interview.resume_path && (
-                <a href={interview.resume_path} target="_blank" rel="noreferrer" className="btn-secondary">
-                  Open Resume
+                <a href={interview.resume_path} target="_blank" rel="noreferrer" className="btn-secondary text-sm">
+                  View Resume
                 </a>
               )}
             </div>
-            <div className="mt-5 fact-grid">
-              {[
-                ['Application', interview.application_code],
-                ['Job', interview.job_title],
-                ['Source', interview.source],
-                ['Experience', interview.candidate_years_of_experience != null ? `${interview.candidate_years_of_experience} years` : '-'],
-                ['Current Organization', interview.current_organization],
-                ['Location', interview.current_location],
-                ['Recruiter', interview.recruiter_email],
-                ['Phone', interview.candidate_phone],
-                ['Email', interview.candidate_email],
-              ].map(([label, value]) => (
-                <div key={label} className="fact-card">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">{label}</p>
-                  <p className="mt-2 text-sm font-medium text-gray-900">{value || '-'}</p>
-                </div>
-              ))}
+            
+            {/* Organized info grid */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-50 rounded-xl p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Application</p>
+                <p className="mt-1 text-sm font-semibold text-slate-800">{interview.application_code || '-'}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Source</p>
+                <p className="mt-1 text-sm font-semibold text-slate-800">{interview.source || '-'}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Experience</p>
+                <p className="mt-1 text-sm font-semibold text-slate-800">
+                  {interview.candidate_years_of_experience != null ? `${interview.candidate_years_of_experience} yrs` : '-'}
+                </p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Location</p>
+                <p className="mt-1 text-sm font-semibold text-slate-800">{interview.current_location || '-'}</p>
+              </div>
             </div>
+
+            {/* Contact info */}
+            <div className="mt-4 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+              <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600 mb-3">Contact Information</p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                  </svg>
+                  <span className="text-sm text-slate-700">{interview.candidate_email || '-'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                  </svg>
+                  <span className="text-sm text-slate-700">{interview.candidate_phone || '-'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Current Organization */}
+            {interview.current_organization && (
+              <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Current Organization</p>
+                <p className="text-sm font-medium text-slate-800">{interview.current_organization}</p>
+              </div>
+            )}
+
+            {/* Resume Section */}
             <div className="mt-6">
+              <div className="flex items-center gap-2 mb-3">
+                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <h3 className="text-sm font-semibold text-slate-800">Resume</h3>
+              </div>
               {interview.resume_path ? (
                 <div className="preview-surface">
                   {renderInlinePreview(interview.resume_path, interview.resume_file_name || interview.candidate_name || 'Resume') || (
@@ -459,42 +526,141 @@ export default function InterviewWorkspace() {
               )}
             </div>
           </div>
-
-          <div className="workspace-card panel-hover">
-            <h2 className="section-title">Live Context</h2>
-            <div className="mt-4 fact-grid">
-              <div className="fact-card">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">Reviewer</p>
-                <p className="mt-1 text-sm font-medium text-gray-900">{user?.email}</p>
-              </div>
-              <div className="fact-card">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">Current ATS status</p>
-                <p className="mt-1 text-sm font-medium text-gray-900">{interview.app_status}</p>
-              </div>
-              <div className="fact-card">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">Teams / calendar</p>
-                <p className="mt-1 text-sm font-medium text-gray-900">
-                  {interview.meeting_join_url ? 'Meeting link is available.' : 'Meeting link has not been generated yet.'}
-                </p>
-                {interview.meeting_join_url && (
-                  <a href={interview.meeting_join_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-sm font-semibold text-indigo-700 hover:text-indigo-900">
-                    Open Teams meeting
-                  </a>
-                )}
-              </div>
-            </div>
-          </div>
         </aside>
 
         <div className="workboard-lane">
-          <div className="workspace-card panel-hover">
-            <div className="flex items-center gap-2">
-              <h2 className="section-title">5. Feedback & outcome (shortlist · reject · no-show)</h2>
-              <InfoTip text="Once the interview is complete, use this panel for structured scoring, rejection reasons, shortlist decisions, no-show handling, or another-round requests." />
+          {/* SEQUENTIAL RENDERING: Show only relevant section based on candidate state */}
+
+          {/* Waiting for HR to confirm slots */}
+          {interview?.app_status === 'AwaitingInterviewScheduling' && (
+            <div className="workspace-card panel-hover border-l-4 border-amber-500 bg-amber-50/50">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="section-title text-amber-900">Slots Submitted - Waiting for HR</h2>
+                  <p className="text-sm text-amber-700">HR will confirm the final interview schedule</p>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl p-4 border border-amber-200">
+                <p className="text-xs font-semibold uppercase tracking-wider text-amber-700 mb-2">Suggested Slots</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {interview.suggested_interview_datetime1 && (
+                    <div className="flex items-center gap-2 text-sm text-slate-700">
+                      <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                      {new Date(interview.suggested_interview_datetime1).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                    </div>
+                  )}
+                  {interview.suggested_interview_datetime2 && (
+                    <div className="flex items-center gap-2 text-sm text-slate-700">
+                      <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                      {new Date(interview.suggested_interview_datetime2).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <p className="mt-4 text-xs text-slate-500">
+                You can suggest new slots by contacting the recruiter, or the candidate will be moved to the next step once HR confirms the schedule.
+              </p>
             </div>
-            <p className="mt-2 text-sm text-gray-500">
-              Current schedule: {formatDateTime(interview.scheduled_datetime)}.
-            </p>
+          )}
+
+          {/* PHASE 1: Pre-interview - Decision to Shortlist or Reject */}
+          {needsSlotSuggestion && (
+            <div className="workspace-card panel-hover border-l-4 border-indigo-500">
+              <h2 className="section-title">Your Decision</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                After reviewing the candidate profile, let us know if you'd like to proceed with scheduling or decline the profile.
+              </p>
+              
+              <div className="mt-5">
+                {/* Quick Reject Section */}
+                <div className="rounded-xl border border-red-100 bg-red-50/50 p-4 mb-4">
+                  <p className="text-sm font-semibold text-red-900 mb-3">Decline this candidate</p>
+                  <select
+                    value={preScreenRejectReason}
+                    onChange={(event) => setPreScreenRejectReason(event.target.value)}
+                    className="input-field"
+                  >
+                    <option value="">Select rejection reason</option>
+                    {rejectionReasons.map((reason) => (
+                      <option key={`prescreen-${reason.id}`} value={reason.reason}>{reason.reason}</option>
+                    ))}
+                  </select>
+                  <textarea
+                    rows={2}
+                    value={preScreenRejectRemarks}
+                    onChange={(event) => setPreScreenRejectRemarks(event.target.value)}
+                    className="input-field mt-3"
+                    placeholder="Optional remarks"
+                  />
+                  <button
+                    type="button"
+                    onClick={rejectBeforeScheduling}
+                    disabled={submitting || !preScreenRejectReason}
+                    className="mt-3 w-full rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    Decline Candidate
+                  </button>
+                </div>
+
+                <div className="relative flex items-center py-2">
+                  <div className="flex-grow border-t border-gray-200"></div>
+                  <span className="flex-shrink-0 mx-4 text-gray-400 text-xs uppercase tracking-wider">or</span>
+                  <div className="flex-grow border-t border-gray-200"></div>
+                </div>
+
+                {/* Shortlist + Suggest Slots */}
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+                  <p className="text-sm font-semibold text-emerald-900 mb-4">Proceed with scheduling</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Suggested Slot 1</label>
+                      <input
+                        type="datetime-local"
+                        value={slotForm.slot1}
+                        onChange={(event) => setSlotForm((prev) => ({ ...prev, slot1: event.target.value }))}
+                        className="input-field"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Suggested Slot 2</label>
+                      <input
+                        type="datetime-local"
+                        value={slotForm.slot2}
+                        onChange={(event) => setSlotForm((prev) => ({ ...prev, slot2: event.target.value }))}
+                        className="input-field"
+                      />
+                    </div>
+                  </div>
+                  <button 
+                    onClick={suggestSlots} 
+                    disabled={submitting || !slotForm.slot1 || !slotForm.slot2} 
+                    className="btn-primary mt-4 w-full disabled:opacity-50"
+                  >
+                    {submitting ? 'Submitting...' : 'Shortlist & Share Slots'}
+                  </button>
+                  {!slotForm.slot1 || !slotForm.slot2 ? (
+                    <p className="mt-2 text-xs text-gray-500 text-center">Both slots are required to shortlist</p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* PHASE 2: Post-interview - Feedback */}
+          {canGiveFeedback && !needsSlotSuggestion && (
+            <div className="workspace-card panel-hover">
+              <div className="flex items-center gap-2">
+                <h2 className="section-title">Interview Feedback</h2>
+                <InfoTip text="Submit your evaluation after the interview. Use the scores and remarks to help the hiring team make their decision." />
+              </div>
+              <p className="mt-2 text-sm text-gray-500">
+                Interview: {formatDateTime(interview.scheduled_datetime)} · Round {currentRoundNumber}
+              </p>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               {[
@@ -598,7 +764,7 @@ export default function InterviewWorkspace() {
               ) : null}
             </div>
 
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+<div className="mt-4 grid gap-2 sm:grid-cols-2">
               <button onClick={submitFeedback} disabled={submitting || !canReview} className="btn-primary w-full disabled:opacity-50">
                 {submitting ? 'Submitting...' : 'Submit Interview Feedback'}
               </button>
@@ -606,186 +772,92 @@ export default function InterviewWorkspace() {
                 Mark Candidate No-Show
               </button>
             </div>
-          </div>
 
-          <div className="workspace-card panel-hover">
-            <div className="flex items-center gap-2">
-              <h2 className="section-title">Candidate Documents</h2>
-              <InfoTip text="HODs and interviewers can review the same inline candidate documents HR sees, so pre-interview screening decisions can be made with the full dossier in view." />
-            </div>
-            {!interview.candidate_documents?.length ? (
-              <div className="mt-5 rounded-2xl border border-dashed border-gray-300 px-4 py-10 text-sm text-gray-500">
-                No candidate documents are available yet.
-              </div>
-            ) : (
-              <div className="mt-5 space-y-3">
-                {interview.candidate_documents.map((document) => (
-                  <div key={document.id} className="decision-card">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">{document.document_name}</p>
-                        <p className="mt-1 text-sm text-gray-500">
-                          {String(document.stage || '').replace(/_/g, ' ')} · {document.status}
-                        </p>
-                      </div>
-                      {document.file_path && (
-                        <a href={document.file_path} target="_blank" rel="noreferrer" className="btn-secondary">
-                          Open File
-                        </a>
-                      )}
-                    </div>
-                    {document.description && <p className="mt-3 text-sm text-gray-700">{document.description}</p>}
-                    {document.file_path && (
-                      <div className="preview-surface mt-4">
-                        {renderInlinePreview(document.file_path, document.file_name || document.document_name) || (
-                          <div className="rounded-2xl border border-dashed border-gray-300 px-4 py-6 text-sm text-gray-500">
-                            Inline preview works for PDFs and image files. Open the file directly for other formats.
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
+            {/* Request additional rounds - only show for post-interview */}
+            {canGiveFeedback && maxAdditionalRounds > 0 && (
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-gray-900">Request Another Round</h3>
+                  <InfoTip text="If this round is insufficient, request additional rounds with remarks." />
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-[0.4fr,1fr]">
+                  <select
+                    value={roundRequest.additional_rounds}
+                    onChange={(event) => setRoundRequest((prev) => ({ ...prev, additional_rounds: event.target.value }))}
+                    className="input-field"
+                  >
+                    {Array.from({ length: Math.max(1, Math.min(2, maxAdditionalRounds || 1)) }, (_, index) => index + 1).map((value) => (
+                      <option key={value} value={value}>{value} round{value > 1 ? 's' : ''}</option>
+                    ))}
+                  </select>
+                  <textarea
+                    rows={2}
+                    value={roundRequest.remarks}
+                    onChange={(event) => setRoundRequest((prev) => ({ ...prev, remarks: event.target.value }))}
+                    className="input-field"
+                    placeholder="Explain what still needs to be assessed"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={requestAnotherRound}
+                  disabled={submitting || !roundRequest.remarks.trim()}
+                  className="btn-secondary mt-3 w-full disabled:opacity-50"
+                >
+                  {submitting ? 'Submitting...' : 'Request Additional Round'}
+                </button>
               </div>
             )}
           </div>
+          )}
+
+          {/* Waiting state - neither slots needed nor feedback available */}
+          {!needsSlotSuggestion && !canGiveFeedback && (
+            <div className="workspace-card panel-hover">
+              <div className="text-center py-8">
+                <p className="text-sm font-semibold text-gray-900">Waiting for next step</p>
+                <p className="mt-2 text-sm text-gray-500">
+                  The interview hasn't been scheduled yet. You'll be able to provide feedback once an interview is scheduled.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         <aside className="workboard-lane workboard-lane-aside">
-          {needsSlotSuggestion && canReview && (
-            <div className="focus-panel">
+          {/* Show Teams link if available */}
+          {interview.meeting_join_url && (
+            <div className="workspace-card panel-hover bg-indigo-50 border-indigo-200">
               <div className="flex items-center gap-2">
-                <h2 className="section-title">2. Shortlist & suggest two slots</h2>
-                <InfoTip text="The interviewer or HOD starts the scheduling loop by suggesting two workable options. HR then confirms the final slot from the scheduling workspace." />
+                <h2 className="section-title">Interview Meeting</h2>
               </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">Suggested slot 1</label>
-                  <input
-                    type="datetime-local"
-                    value={slotForm.slot1}
-                    onChange={(event) => setSlotForm((prev) => ({ ...prev, slot1: event.target.value }))}
-                    className="input-field"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">Suggested slot 2</label>
-                  <input
-                    type="datetime-local"
-                    value={slotForm.slot2}
-                    onChange={(event) => setSlotForm((prev) => ({ ...prev, slot2: event.target.value }))}
-                    className="input-field"
-                  />
-                </div>
-              </div>
-              <button onClick={suggestSlots} disabled={submitting} className="btn-primary mt-4 w-full disabled:opacity-50">
-                {submitting ? 'Submitting...' : 'Share Slots with Recruiter'}
-              </button>
-
-              <div className="decision-card decision-card-warn mt-4">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold text-rose-900">Reject before scheduling</p>
-                  <InfoTip text="If the profile should not proceed after dossier review, reject immediately with a reason. ATS marks this as HODRejected without waiting for slot suggestions." />
-                </div>
-                <select
-                  value={preScreenRejectReason}
-                  onChange={(event) => setPreScreenRejectReason(event.target.value)}
-                  className="input-field mt-3"
-                >
-                  <option value="">Select rejection reason</option>
-                  {rejectionReasons.map((reason) => (
-                    <option key={`prescreen-${reason.id}`} value={reason.reason}>{reason.reason}</option>
-                  ))}
-                </select>
-                <textarea
-                  rows={3}
-                  value={preScreenRejectRemarks}
-                  onChange={(event) => setPreScreenRejectRemarks(event.target.value)}
-                  className="input-field mt-3"
-                  placeholder="Optional remarks for recruiter and audit trail"
-                />
-                <button
-                  type="button"
-                  onClick={rejectBeforeScheduling}
-                  disabled={submitting || !preScreenRejectReason}
-                  className="mt-3 w-full rounded-xl border border-rose-200 bg-rose-100 px-4 py-2.5 text-sm font-semibold text-rose-700 hover:bg-rose-200 disabled:opacity-50"
-                >
-                  Mark as HOD Rejected
-                </button>
-              </div>
+              <a 
+                href={interview.meeting_join_url} 
+                target="_blank" 
+                rel="noreferrer" 
+                className="mt-3 inline-flex items-center justify-center w-full btn-primary"
+              >
+                Join Teams Meeting
+              </a>
             </div>
           )}
 
           <div className="workspace-card panel-hover">
             <div className="flex items-center gap-2">
-              <h2 className="section-title">4. Request another round / send reminder</h2>
-              <InfoTip text="If this round is insufficient, request one or more additional rounds with remarks. Recruiters will see the request in the workflow and can increase the round plan." />
+              <h2 className="section-title">Quick Actions</h2>
             </div>
-            <div className="mt-5 space-y-4">
-              <div className="grid gap-3 sm:grid-cols-[0.32fr,1fr]">
-                <select
-                  value={roundRequest.additional_rounds}
-                  onChange={(event) => setRoundRequest((prev) => ({ ...prev, additional_rounds: event.target.value }))}
-                  className="input-field"
-                  disabled={maxAdditionalRounds <= 0}
-                >
-                  {Array.from({ length: Math.max(1, Math.min(2, maxAdditionalRounds || 1)) }, (_, index) => index + 1).map((value) => (
-                    <option key={value} value={value}>{value} additional round{value > 1 ? 's' : ''}</option>
-                  ))}
-                </select>
-                <textarea
-                  rows={3}
-                  value={roundRequest.remarks}
-                  onChange={(event) => setRoundRequest((prev) => ({ ...prev, remarks: event.target.value }))}
-                  className="input-field"
-                  placeholder="Explain what still needs to be assessed before the candidate can move forward."
-                />
-              </div>
-              {maxAdditionalRounds <= 0 ? (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  This candidate is already on the maximum interview plan of three rounds.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {suggestedAdditionalRoundPanels.map((panel, index) => (
-                    <div key={panel.roundNumber}>
-                      <div className="mb-2 flex items-center gap-2">
-                        <label className="text-sm font-semibold text-gray-900">
-                          Suggested interviewers for Round {panel.roundNumber}
-                        </label>
-                        <InfoTip text="Optional. Suggest the panel members who should cover this extra round so the recruiter can approve and schedule faster." />
-                      </div>
-                      <EmailAutocompleteTags
-                        value={panel.interviewers}
-                        onChange={(items) => setRoundRequest((prev) => ({
-                          ...prev,
-                          suggested_panels: prev.suggested_panels.map((existing, position) => (
-                            position === index ? items : existing
-                          )),
-                        }))}
-                        placeholder="Search employees or add email addresses"
-                        helperText="Optional recruiter-visible suggestion for the new round."
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="grid gap-2 sm:grid-cols-2">
-                <button onClick={requestAnotherRound} disabled={submitting || maxAdditionalRounds <= 0} className="btn-secondary w-full disabled:opacity-50">
-                  Request Additional Round(s)
-                </button>
-                <button onClick={() => sendReminder('recruiter')} disabled={submitting} className="btn-secondary w-full disabled:opacity-50">
-                  Remind Recruiter
-                </button>
-              </div>
-              {(interview.meeting_join_url || canCoordinate) && (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <button onClick={() => sendReminder('recruiter')} disabled={submitting} className="btn-secondary w-full disabled:opacity-50">
+                Remind Recruiter
+              </button>
+              {canCoordinate && (
                 <button
-                    onClick={() => canCoordinate ? navigate(`/applications/${interview.application_record_id}/schedule`) : sendReminder('candidate')}
-                    disabled={submitting}
-                    className="btn-primary w-full disabled:opacity-50"
-                  >
-                    {canCoordinate ? 'Open Scheduling Workspace' : 'Remind Candidate'}
-                  </button>
+                  onClick={() => navigate(`/applications/${application.id}/workflow`)}
+                  disabled={submitting}
+                  className="btn-primary w-full disabled:opacity-50"
+                >
+                  Open Scheduling Workspace
+                </button>
               )}
             </div>
           </div>

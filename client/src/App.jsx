@@ -18,11 +18,13 @@ import AddCandidate from './pages/AddCandidate';
 import BulkUpload from './pages/BulkUpload';
 import InterviewerPage from './pages/InterviewerPage';
 import InterviewWorkspace from './pages/InterviewWorkspace';
-import InterviewSchedule from './pages/InterviewSchedule';
+// InterviewSchedule was a stub page that no route was actually mounted for.
+// Scheduling now happens inline in the Application Workflow page.
 import CandidatePage from './pages/CandidatePage';
 import AuditTrail from './pages/AuditTrail';
 import AuditDeck from './pages/AuditDeck';
 import TatExplorer from './pages/TatExplorer';
+import ApproverInbox from './pages/ApproverInbox';
 import MIS from './pages/MIS';
 import ApplicationWorkflow from './pages/ApplicationWorkflow';
 import AnalyticsCopilot from './pages/AnalyticsCopilot';
@@ -30,6 +32,7 @@ import Notifications from './pages/Notifications';
 import PublicJobOpening from './pages/PublicJobOpening';
 import CandidatePortal from './pages/CandidatePortal';
 import DocumentReviewQueue from './pages/DocumentReviewQueue';
+import Inbox from './pages/Inbox';
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth();
@@ -86,10 +89,13 @@ export default function App() {
           <Route path="audit" element={<ProtectedRoute roles={['hr_admin']}><AuditDeck /></ProtectedRoute>} />
           <Route path="audit/legacy" element={<ProtectedRoute roles={['hr_admin']}><AuditTrail /></ProtectedRoute>} />
           <Route path="tat" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter', 'hod']}><TatExplorer /></ProtectedRoute>} />
+          {/* CTC approver inbox: any signed-in user can have approvals - the page itself filters by their email. */}
+          <Route path="ctc-approvals" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter', 'hod', 'interviewer']}><ApproverInbox /></ProtectedRoute>} />
           <Route path="mis" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter']}><MIS /></ProtectedRoute>} />
           <Route path="analytics-copilot" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter', 'hod']}><AnalyticsCopilot /></ProtectedRoute>} />
           <Route path="candidate" element={<ProtectedRoute roles={['applicant']}><CandidatePortal /></ProtectedRoute>} />
           <Route path="hr/document-queue" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter']}><DocumentReviewQueue /></ProtectedRoute>} />
+          <Route path="inbox" element={<ProtectedRoute roles={['hr_admin', 'hr_recruiter', 'interviewer', 'hod']}><Inbox /></ProtectedRoute>} />
         </Route>
       </Routes>
     </>

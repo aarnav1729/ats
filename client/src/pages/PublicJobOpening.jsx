@@ -283,12 +283,12 @@ export default function PublicJobOpening() {
           <div className="mt-6 grid gap-3 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-8">
             {[
               ['Job ID', job.job_id],
-              ['Business Unit', job.bu_name || '—'],
-              ['Location', [job.location_name, job.phase_name].filter(Boolean).join(' · ') || '—'],
-              ['Department', [job.department_name, job.sub_department_name].filter(Boolean).join(' · ') || '—'],
-              ['Employment', job.job_type || '—'],
-              ['Experience', job.experience_years != null ? `${job.experience_years} yrs` : '—'],
-              ['Positions', job.total_positions || '—'],
+              ['Business Unit', job.bu_name || ''],
+              ['Location', [job.location_name, job.phase_name].filter(Boolean).join(' · ') || ''],
+              ['Department', [job.department_name, job.sub_department_name].filter(Boolean).join(' · ') || ''],
+              ['Employment', job.job_type || ''],
+              ['Experience', job.experience_years != null ? `${job.experience_years} yrs` : ''],
+              ['Positions', job.total_positions || ''],
               ['Compensation', compRange || 'On discussion'],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -386,7 +386,7 @@ export default function PublicJobOpening() {
                     </label>
                     {f.type === 'select' ? (
                       <select value={value} onChange={(e) => setField(f.key, e.target.value)} className={common}>
-                        <option value="">—</option>
+                        <option value=""></option>
                         {f.options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
                       </select>
                     ) : (

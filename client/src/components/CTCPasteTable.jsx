@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import haptic from '../utils/haptic';
 
 /**
- * CTCPasteTable — Format-preserving CTC entry component.
+ * CTCPasteTable  Format-preserving CTC entry component.
  *
  * The recruiter pastes any CTC breakdown from Excel / Word / email and the
  * component preserves whitespace, tabs, and line breaks exactly. The text
@@ -23,7 +23,7 @@ export default function CTCPasteTable({ value, onChange, readOnly = false, place
     if (typeof v?.text === 'string') return v.text;
     if (Array.isArray(v?.rows)) return v.rows.map((r) => r.join('\t')).join('\n');
     if (v && typeof v === 'object') {
-      // Legacy flat { key: value } — render as two-column text
+      // Legacy flat { key: value }  render as two-column text
       return Object.entries(v)
         .filter(([k]) => !['rows', 'text'].includes(k))
         .map(([k, val]) => `${k}\t${val ?? ''}`)

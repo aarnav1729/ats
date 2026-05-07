@@ -1,4 +1,4 @@
-// TriageMenu — single component that exposes the candidate-row actions
+// TriageMenu  single component that exposes the candidate-row actions
 // described in the Phase 5 spec: HR reject (reason dropdown), Move to job
 // (searchable picker), Move to talent pool, Blacklist (phone ban), Shortlist
 // (with optional rounds + interviewers override).
@@ -22,7 +22,9 @@ const REJECTION_REASONS = [
 export default function TriageMenu({ application, onChanged, compact }) {
   const [open, setOpen] = useState(false);
   const [modal, setModal] = useState(null); // 'reject' | 'movejob' | 'tp' | 'blacklist' | 'shortlist' | null
+  const [flipUp, setFlipUp] = useState(false);
   const ref = useRef(null);
+  const buttonRef = useRef(null);
 
   useEffect(() => {
     function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
@@ -30,20 +32,32 @@ export default function TriageMenu({ application, onChanged, compact }) {
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
 
+  const handleOpen = () => {
+    const isOpen = !open;
+    setOpen(isOpen);
+    if (isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const dropdownHeight = 220;
+      setFlipUp(rect.bottom > viewportHeight - dropdownHeight);
+    }
+  };
+
   const close = () => { setModal(null); setOpen(false); };
   const done = (msg) => { toast.success(msg); close(); onChanged?.(); };
 
   return (
     <div ref={ref} className="relative inline-block">
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={buttonRef}
+        onClick={handleOpen}
         className={`v2-btn-ghost ${compact ? 'text-xs' : ''}`}
         style={compact ? { padding: '6px 10px' } : undefined}
       >
         Triage ▾
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-1 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl v2-fade-up">
+        <div className={`absolute right-0 z-50 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl v2-fade-up ${flipUp ? 'bottom-full mb-1' : 'mt-1'}`}>
           <Item label="✓ Shortlist" onClick={() => setModal('shortlist')} />
           <Item label="↪ Move to another job" onClick={() => setModal('movejob')} />
           <Item label="🪣 Move to talent pool" onClick={() => setModal('tp')} />
@@ -87,6 +101,10 @@ function ModalShell({ title, children, onClose, footer }) {
 }
 
 // ── Shortlist with rounds + interviewers override ─────────────────────────
+// Defaults are seeded in this priority order:
+//   1. Application-level overrides (from a previous shortlist on the same candidate)
+//   2. Job-level defaults (jobs.interview_rounds + jobs.interviewer_emails JSON)
+//   3. 2 rounds, no interviewers
 function ShortlistModal({ app, onClose, onDone }) {
   const [rounds, setRounds] = useState(app.no_of_rounds || 2);
   const [interviewers, setInterviewers] = useState(() => {
@@ -95,6 +113,35 @@ function ShortlistModal({ app, onClose, onDone }) {
   });
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
+  const [jobLoading, setJobLoading] = useState(false);
+  const [jobSeeded, setJobSeeded] = useState(false);
+
+  // Fetch the job and seed defaults from its interview_rounds + interviewer_emails
+  // when the application doesn't already have overrides recorded.
+  useEffect(() => {
+    let cancelled = false;
+    const haveOwn = (app.no_of_rounds && app.no_of_rounds > 0) || (Array.isArray(app.interviewers) && app.interviewers.some((r) => Array.isArray(r) && r.length));
+    if (haveOwn || !app.ats_job_id) return;
+    setJobLoading(true);
+    import('../services/api').then(({ jobsAPI }) => {
+      jobsAPI.get(app.ats_job_id).then((res) => {
+        if (cancelled) return;
+        const job = res.data || {};
+        const jobRounds = Number(job.interview_rounds || job.no_of_rounds) || 0;
+        // interviewer_emails on jobs is `{ "1": ["a@…","b@…"], "2": [...] }`
+        const map = job.interviewer_emails && typeof job.interviewer_emails === 'object' ? job.interviewer_emails : {};
+        const seeded = [1, 2, 3].map((n) => {
+          const list = map[String(n)] || map[n] || [];
+          return Array.isArray(list) ? list.map((x) => (typeof x === 'string' ? x : x?.email || '')).filter(Boolean).join(', ') : '';
+        });
+        if (jobRounds > 0) setRounds(Math.max(1, Math.min(3, jobRounds)));
+        setInterviewers((cur) => seeded.map((seed, i) => cur[i] || seed));
+        setJobSeeded(true);
+      }).catch(() => {}).finally(() => { if (!cancelled) setJobLoading(false); });
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line
+  }, []);
 
   const submit = async () => {
     setSaving(true);
@@ -125,6 +172,8 @@ function ShortlistModal({ app, onClose, onDone }) {
       <p className="text-sm text-slate-700 mb-4">
         Confirm the interview plan for this specific candidate. The job's defaults are pre-filled - change them if this profile needs different rounds or interviewers.
       </p>
+      {jobLoading && <p className="text-xs text-indigo-600 mb-3">Loading job defaults…</p>}
+      {jobSeeded && !jobLoading && <p className="text-xs text-emerald-700 mb-3">✓ Pre-filled from job defaults. Edit anything you'd like to override for this candidate.</p>}
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
           <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Rounds</label>

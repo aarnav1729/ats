@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { applicationsAPI, jobsAPI } from '../services/api';
+import { applicationsAPI, jobsAPI, timelineAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import AppModal from '../components/AppModal';
 import InfoTip from '../components/InfoTip';
@@ -90,6 +90,12 @@ export default function TalentPool() {
 
   // Candidate detail modal
   const [detailCandidate, setDetailCandidate] = useState(null);
+  // Full timeline_events history for the open candidate. The pool used to
+  // show only a synthetic "Added/Expires" stub which hid real action
+  // history (interview rounds, CTC events, document reviews etc). We now
+  // load the full polymorphic timeline so HR can see every action ever
+  // taken on the candidate, even after they're parked.
+  const [detailTimeline, setDetailTimeline] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -238,10 +244,19 @@ export default function TalentPool() {
 
   const openCandidateDetail = async (candidate) => {
     setDetailCandidate(candidate);
+    setDetailTimeline([]);
     setDetailLoading(true);
     try {
       const res = await applicationsAPI.get(candidate.id);
       setDetailCandidate(res.data || candidate);
+      // Pull the polymorphic timeline. Falls back gracefully if the endpoint
+      // returns 404 (candidate has no events yet).
+      const appCode = res.data?.application_id || candidate.application_id || candidate.id;
+      try {
+        const tl = await timelineAPI.list({ entity_type: 'application', entity_id: appCode, limit: 200 });
+        const items = Array.isArray(tl.data) ? tl.data : (tl.data?.items || tl.data?.timeline || []);
+        setDetailTimeline(items);
+      } catch { setDetailTimeline([]); }
     } catch {
       // keep the row-level data if full fetch fails
     } finally {
@@ -610,38 +625,64 @@ export default function TalentPool() {
 
                   <hr className="border-gray-100" />
 
-                  {/* Status Timeline */}
+                  {/* Full historical timeline - pulled from timeline_events.
+                      Shows every interview, document, CTC, offer + pool
+                      movement that ever happened to this candidate, even
+                      across multiple jobs. */}
                   <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-3">Timeline</h4>
-                    <div className="space-y-3">
-                      {detailCandidate.status_history && Array.isArray(detailCandidate.status_history) && detailCandidate.status_history.length > 0 ? (
-                        detailCandidate.status_history.map((entry, i) => (
-                          <TimelineItem
-                            key={i}
-                            label={entry.status || entry.action || 'Status change'}
-                            date={entry.changed_at || entry.created_at || entry.date}
-                            detail={entry.changed_by || entry.user || entry.note}
-                          />
-                        ))
-                      ) : (
-                        <>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Full history</h4>
+                      <span className="text-[10px] text-gray-400 font-mono">{detailTimeline.length} events</span>
+                    </div>
+                    <div className="v2-timeline">
+                      {detailTimeline.length === 0 ? (
+                        <div className="space-y-3">
                           {detailCandidate.created_at && (
                             <TimelineItem label="Added to pool" date={detailCandidate.created_at} detail={detailCandidate.created_by ? `by ${detailCandidate.created_by}` : undefined} />
                           )}
                           {detailCandidate.status && detailCandidate.status !== 'Active' && (
                             <TimelineItem label={`Status: ${detailCandidate.status}`} date={detailCandidate.updated_at} />
                           )}
-                        </>
+                          <p className="text-[11px] text-gray-400 italic">No detailed events recorded - older candidates may show only the summary above.</p>
+                        </div>
+                      ) : (
+                        detailTimeline.map((evt) => {
+                          const tone = /reject|rejected|dropout|withdraw|blacklist|salary_rejected/i.test(evt.event_type || '')
+                            ? 'danger'
+                            : /accept|joined|approved|sign|cleared|selected/i.test(evt.event_type || '')
+                              ? 'success'
+                              : /hold|postpone|moved/i.test(evt.event_type || '')
+                                ? 'warn'
+                                : 'info';
+                          return (
+                            <div key={evt.id} className="v2-tl-item" data-tone={tone}>
+                              <div className="v2-tl-time">{new Date(evt.created_at).toLocaleString()}</div>
+                              <div className="v2-tl-headline">
+                                {evt.summary || evt.event_type}
+                                {evt.actor_email && <span className="v2-tl-actor"> · {evt.actor_email}</span>}
+                              </div>
+                              {(evt.from_state || evt.to_state) && (
+                                <div className="v2-tl-meta">
+                                  {evt.from_state && <span>From <code className="text-xs">{evt.from_state}</code></span>}
+                                  {evt.from_state && evt.to_state && <span> → </span>}
+                                  {evt.to_state && <span>to <code className="text-xs">{evt.to_state}</code></span>}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
                       )}
                       {(() => {
                         const exp = getExpiryDate(detailCandidate);
                         if (!exp) return null;
                         const expired = exp.getTime() < Date.now();
                         return (
-                          <TimelineItem
-                            label={expired ? 'Pool membership expired' : 'Pool membership expires'}
-                            date={exp.toISOString()}
-                          />
+                          <div className="v2-tl-item" data-tone={expired ? 'danger' : 'warn'}>
+                            <div className="v2-tl-time">{exp.toLocaleString()}</div>
+                            <div className="v2-tl-headline">
+                              {expired ? 'Pool membership expired' : 'Pool membership expires'}
+                            </div>
+                          </div>
                         );
                       })()}
                     </div>

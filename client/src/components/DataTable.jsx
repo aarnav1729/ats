@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import haptic from '../utils/haptic';
 
-// ── Inline icon helpers ──────────────────────────────────────────────────────
+// -- Inline icon helpers ------------------------------------------------------
 
 function IconSearch({ className = 'w-4 h-4' }) {
   return (
@@ -66,7 +66,7 @@ function cellToString(value) {
   return String(value);
 }
 
-// ── Main component ───────────────────────────────────────────────────────────
+// -- Main component -----------------------------------------------------------
 
 export default function DataTable({
   columns = [],
@@ -89,7 +89,7 @@ export default function DataTable({
   const [showColumnMenu, setShowColumnMenu] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(defaultPageSize);
-  const [collapsed, setCollapsed] = useState(collapsible);
+  const [collapsed, setCollapsed] = useState(false);
 
   const filterInputRef = useRef(null);
   const columnMenuRef = useRef(null);
@@ -244,7 +244,7 @@ export default function DataTable({
 
   const activeFilterCount = Object.values(columnFilters).filter(Boolean).length;
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // -- Render ----------------------------------------------------------------
 
   return (
     <div

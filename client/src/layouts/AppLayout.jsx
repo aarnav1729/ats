@@ -9,6 +9,7 @@ const navigationSections = [
     label: 'Operate',
     items: [
       { name: 'Dashboard',        path: '/',               icon: 'HomeIcon',           roles: ['hr_admin', 'hr_recruiter', 'interviewer', 'applicant', 'hod'] },
+      { name: 'My Inbox',         path: '/inbox',          icon: 'BellIcon',           roles: ['hr_admin', 'hr_recruiter', 'interviewer', 'hod'] },
       { name: 'Requisitions',     path: '/requisitions',   icon: 'DocumentPlusIcon',   roles: ['hr_admin', 'hr_recruiter', 'hod'] },
       { name: 'Jobs',             path: '/jobs',           icon: 'BriefcaseIcon',      roles: ['hr_admin', 'hr_recruiter'] },
       { name: 'Talent Pool',      path: '/talent-pool',    icon: 'UserGroupIcon',      roles: ['hr_admin', 'hr_recruiter'] },
@@ -24,6 +25,7 @@ const navigationSections = [
       { name: 'Analytics Copilot', path: '/analytics-copilot', icon: 'SparklesIcon',  roles: ['hr_admin', 'hr_recruiter', 'hod'] },
       { name: 'MIS Reports',       path: '/mis',               icon: 'ChartPieIcon',  roles: ['hr_admin', 'hr_recruiter'] },
       { name: 'TAT Explorer',      path: '/tat',               icon: 'ClockIcon',     roles: ['hr_admin', 'hr_recruiter', 'hod'] },
+      { name: 'CTC Approvals',     path: '/ctc-approvals',     icon: 'CurrencyRupeeIcon', roles: ['hr_admin', 'hr_recruiter', 'hod', 'interviewer'] },
       { name: 'Audit Deck',        path: '/audit',             icon: 'ClockIcon',     roles: ['hr_admin'] },
     ],
   },

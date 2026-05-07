@@ -107,6 +107,7 @@ export const applicationsAPI = {
   talentPool: (params) => api.get('/applications/talent-pool', { params }),
   jobMatches: (id) => api.get(`/applications/job-matches/${id}`),
   duplicates: (params) => api.get('/applications/duplicates', { params }),
+  duplicateAudit: (params) => api.get('/applications/duplicate-audit', { params }),
   bulkStatus: (data) => api.post('/applications/bulk-status', data),
   updateInterviewPlan: (id, data) => api.put(`/applications/${id}/interview-plan`, data),
   keepInTalentPool: (id) => api.post(`/applications/${id}/keep-in-talent-pool`),
@@ -148,6 +149,7 @@ export const auditAPI = {
   list: (params) => api.get('/audit', { params }),
   export: (params) => api.get('/audit/export', { params }),
   stats: () => api.get('/audit/stats'),
+  loginActivity: () => api.get('/audit/login-activity'),
 };
 
 // MIS
@@ -209,6 +211,9 @@ export const candidatePortalAPI = {
   invite: (applicationId) => api.post(`/candidate-portal/${applicationId}/invite`),
   me: () => api.get('/candidate-portal/me'),
   uploadDocument: (docId, formData) => api.post(`/candidate-portal/documents/${docId}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  // Recruiter / admin uploads on the candidate's behalf - same shape, but
+  // routes to the hrAny-protected endpoint and stamps the actor as HR.
+  uploadDocumentAsHr: (applicationId, docId, formData) => api.post(`/candidate-portal/applications/${applicationId}/documents/${docId}/upload-as-hr`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   reviewQueue: () => api.get('/candidate-portal/review-queue'),
   reviewDocument: (docId, data) => api.post(`/candidate-portal/documents/${docId}/review`, data),
   requestDocument: (applicationId, data) => api.post(`/candidate-portal/${applicationId}/documents/request`, data),
@@ -273,6 +278,13 @@ export const ctcBreakupAPI = {
   myRespond: (id, payload) => api.post(`/ctc-breakup/me/breakup/${id}/respond`, payload),
   setComparison: (applicationId, formData) => api.post(`/ctc-breakup/${applicationId}/comparison`, formData),
   all: (applicationId) => api.get(`/ctc-breakup/${applicationId}/all`),
+  // Recruiter 2 clearance
+  r2Clear: (applicationId, payload) => api.post(`/ctc-breakup/${applicationId}/r2-clear`, payload),
+  // HR Admin decision: approved | rejected | renegotiate | forward
+  adminDecide: (applicationId, payload) => api.post(`/ctc-breakup/${applicationId}/admin-decide`, payload),
+  // Approver-side
+  approverAct: (applicationId, payload) => api.post(`/ctc-breakup/${applicationId}/approver-act`, payload),
+  approverTasks: () => api.get('/ctc-breakup/me/approver-tasks'),
 };
 
 // Recruiter uploads docs on behalf of candidate

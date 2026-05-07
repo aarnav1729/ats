@@ -125,7 +125,7 @@ router.post('/me/send', candidateOnly, upload.single('file'), async (req, res) =
     // Notify primary + secondary recruiter
     const recruiters = [app.recruiter_email, app.secondary_recruiter_email].filter(Boolean);
     for (const to of recruiters) {
-      sendEmail(to, `New candidate message — ${app.candidate_name}`, notifyHtml({ senderName: app.candidate_name || req.user.email, body, jobTitle: app.job_title })).catch(() => {});
+      sendEmail(to, `New candidate message  ${app.candidate_name}`, notifyHtml({ senderName: app.candidate_name || req.user.email, body, jobTitle: app.job_title })).catch(() => {});
     }
 
     res.json({ message: ins.rows[0] });

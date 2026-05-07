@@ -1,4 +1,4 @@
-# Premier Energies ATS — User Guide
+# Premier Energies ATS  User Guide
 
 **Version**: 2.1 (Phase 0–10 rebuild) · **Last updated**: April 2026
 
@@ -31,7 +31,7 @@ The Premier Energies ATS is a single-tenant, role-based hiring platform spanning
 - **Server**: Node.js + Express, PostgreSQL via `pg`, JWT auth, Microsoft Graph for outbound email
 - **Client**: React 18 + Vite + Tailwind CSS, design-token CSS layer (`v2.css`)
 - **AI**: Local Ollama for resume parsing + analytics copilot (graceful fallback if unavailable)
-- **Reminders**: Setinterval-based poll runner (`reminders.js`) — no external job queue
+- **Reminders**: Setinterval-based poll runner (`reminders.js`)  no external job queue
 - **Brand**: `pel.png` logo + `l.png` wordmark, served at `/pel.png` and `/l.png`
 
 **Top-level project layout**:
@@ -64,7 +64,7 @@ Five built-in roles, defined in `users.role`:
 | **`hr_recruiter`** | Sourcing, triage, interviews, document reviews scoped to own assignments, CTC drafting |
 | **`hod`** | Raise requisitions, approve at HOD/CXO stage when listed in `approvers_master`, view assigned candidates |
 | **`interviewer`** | View assigned candidates, suggest slots, submit feedback, request more rounds |
-| **`applicant`** | Candidate Portal — chat, document uploads, CTC accept, offer signature |
+| **`applicant`** | Candidate Portal  chat, document uploads, CTC accept, offer signature |
 
 **Login**: passwordless OTP. `POST /api/auth/login` issues a 6-digit code expiring in 5 minutes via Graph email; `POST /api/auth/verify-otp` exchanges it for a JWT. Logout calls `POST /api/auth/logout` which writes a `session/delete` audit row.
 
@@ -123,10 +123,10 @@ After approval, HR Admin chooses one of three paths from the Requisition Detail 
 | Path | Result |
 |---|---|
 | **Create Job** | Opens `/jobs/create` prefilled with the requisition; recruiter can add `hr_one_job_id` + interviewer rounds. Notifies recruiter + admin + raiser on save. |
-| **Assign Recruiter(s)** | `POST /:id/assign-recruiter` — writes `requisitions.assigned_recruiter_email`, emails them. |
-| **Hold with reason** | `POST /api/requisition-holds` — TAT pause begins, hold reason emailed to raiser + recruiters. |
+| **Assign Recruiter(s)** | `POST /:id/assign-recruiter`  writes `requisitions.assigned_recruiter_email`, emails them. |
+| **Hold with reason** | `POST /api/requisition-holds`  TAT pause begins, hold reason emailed to raiser + recruiters. |
 
-### 3.4 Sourcing — application intake
+### 3.4 Sourcing  application intake
 
 Two intake paths:
 
@@ -220,67 +220,67 @@ Each step can **approve** (forward), **reject** (`SalaryRejected`, candidate ret
 
 ## 4. Pages Reference
 
-### 4.1 `/` — Dashboard
+### 4.1 `/`  Dashboard
 Hero + KPIs (open jobs, applications, offer acceptance, avg time to fill) + funnel + recruiter momentum + needs-attention queue. Demo seeding controls for HR Admin.
 
-### 4.2 `/requisitions` — Requisitions
+### 4.2 `/requisitions`  Requisitions
 List with status filters. Statuses: `draft / pending_approval / pending_cxo_approval / pending_hr_admin_approval / approved / rejected / cxo_rejected / closed / on_hold`.
 
-### 4.3 `/requisitions/create` & `/:id/edit` — Create Requisition
+### 4.3 `/requisitions/create` & `/:id/edit`  Create Requisition
 Wizard: type → BU/Dept → Position table (per-row hire window + backfill data) → Approvers preview → Submit.
 
-### 4.4 `/requisitions/:id` — Requisition Detail
+### 4.4 `/requisitions/:id`  Requisition Detail
 Tabs: Overview, Approvals timeline, Holds, Audit. Approve/Reject buttons gate by role + pending step ownership.
 
-### 4.5 `/jobs` — Jobs
+### 4.5 `/jobs`  Jobs
 Card and table view. Filters by status / BU / department. Bulk export with/without applicants via `/api/mis/jobs-export?include_applicants=true|false`.
 
-### 4.6 `/jobs/create` & `/jobs/:id/edit` — Create Job
+### 4.6 `/jobs/create` & `/jobs/:id/edit`  Create Job
 Multi-step wizard: Identity → Compensation → Description → Visibility → Interview Design (rounds + per-round interviewer chips). New `hr_one_job_id` field on Visibility step.
 
-### 4.7 `/jobs/:id` — Job Detail
+### 4.7 `/jobs/:id`  Job Detail
 Three tabs:
-- **Workflow Queue** — sticky search bar, full-width table with `<TriageMenu>` on every row
-- **Pipeline View** — kanban with 5 lanes (Sourcing → Screening → Interview → Selection → Onboarding)
-- **Job Settings** — full-width with Identity / Compensation / Description sections + Hold with reason CTA
+- **Workflow Queue**  sticky search bar, full-width table with `<TriageMenu>` on every row
+- **Pipeline View**  kanban with 5 lanes (Sourcing → Screening → Interview → Selection → Onboarding)
+- **Job Settings**  full-width with Identity / Compensation / Description sections + Hold with reason CTA
 
-### 4.8 `/talent-pool` — Talent Pool
+### 4.8 `/talent-pool`  Talent Pool
 Candidates with `ats_job_id='TP-POOL'`. Each card shows the movement history ("Moved here from ROLE-XYZ by alice@... on Apr 12").
 
-### 4.9 `/applications/:id/workflow` — Application Workflow
+### 4.9 `/applications/:id/workflow`  Application Workflow
 Per-candidate command centre. Timeline rail, document checklist, CTC chain modal trigger, interview history, chat trigger.
 
-### 4.10 `/interviews` — Interview Hub
+### 4.10 `/interviews`  Interview Hub
 Interviewer-facing list of assigned candidates. Suggest slots, submit feedback, request more rounds, mark no-show.
 
-### 4.11 `/candidate` — Candidate Portal (applicants only)
+### 4.11 `/candidate`  Candidate Portal (applicants only)
 Hero + offer signature panel + chat panel + document upload cards by stage + CTC acceptance section.
 
-### 4.12 `/hr/document-queue` — Document Review Queue
+### 4.12 `/hr/document-queue`  Document Review Queue
 Scoped to recruiter's own applications (full visibility for HR Admin). Approve / Reject with comment.
 
-### 4.13 `/users` — User Management
+### 4.13 `/users`  User Management
 Active + Inactive lists (Masters-style split). Applicants shown in their own table. Reactivate from inactive list.
 
-### 4.14 `/masters` — Masters
+### 4.14 `/masters`  Masters
 Tabs for BUs, Departments, Sub-Departments, Locations, Phases, Grades, Levels, Sources, Approvers Master, Reasons.
 
-### 4.15 `/aop` — AOP Dashboard
+### 4.15 `/aop`  AOP Dashboard
 Annual Operating Plan headcount tracking by BU + grade.
 
-### 4.16 `/mis` — MIS Reports
+### 4.16 `/mis`  MIS Reports
 Multi-tab analytics: Funnel, Time-to-fill, Recruiter momentum, Source mix, Demographics, Detailed open positions, Raw export. Filters: date range, recruiter, **talent_pool (include / exclude / only)**, **hr_one_job_id**.
 
-### 4.17 `/tat` — TAT Explorer
+### 4.17 `/tat`  TAT Explorer
 Hero + level toggle (Requisition / Job / Application) + pair picker + KPI tiles (P50, P90, missing) + full table + **"Show working"** modal that displays the actual rows used to compute each duration plus raw JSON.
 
-### 4.18 `/audit` — Audit Deck
+### 4.18 `/audit`  Audit Deck
 Thread-grouped cards. Filters by action type, entity, actor, date range, field-search. Stats KPIs. JSON export.
 
-### 4.19 `/notifications` — Notifications inbox
+### 4.19 `/notifications`  Notifications inbox
 In-app notifications with mark-read, mark-all-read.
 
-### 4.20 `/analytics-copilot` — Analytics Copilot
+### 4.20 `/analytics-copilot`  Analytics Copilot
 Natural-language Q&A over MIS data. Falls back to data-driven summary if Ollama unavailable.
 
 ---
@@ -311,13 +311,13 @@ All statuses defined in `server/services/interviewWorkflow.js`. Total: **31 stat
 | `Offered` | Candidate signed | SignaturePending, OfferInProcess | OfferAccepted, OfferRejected, OfferDropout |
 | `OfferAccepted` | Explicit acceptance recorded | Offered | Postponed, Joined, OfferDropout |
 | `Postponed` | Joining date pushed | OfferAccepted | Joined, OfferDropout, OfferAccepted |
-| `Joined` | Candidate actually joined (terminal) | OfferAccepted, Postponed | — |
-| `OfferRejected` | Candidate declined offer (terminal) | various | — |
-| `OfferDropout` | No-show / pulled out (terminal) | various | — |
-| `HRRejected` | HR rejected with reason (terminal) | InQueue, Applied, Shortlisted, etc. | — |
+| `Joined` | Candidate actually joined (terminal) | OfferAccepted, Postponed |  |
+| `OfferRejected` | Candidate declined offer (terminal) | various |  |
+| `OfferDropout` | No-show / pulled out (terminal) | various |  |
+| `HRRejected` | HR rejected with reason (terminal) | InQueue, Applied, Shortlisted, etc. |  |
 | `HODRejected` | HOD rejected (terminal) | AwaitingHODResponse | TalentPool (re-entry) |
-| `Withdrawn` | Candidate withdrew (terminal) | many | — |
-| `Blacklisted` | Phone-banned (terminal) | many | — |
+| `Withdrawn` | Candidate withdrew (terminal) | many |  |
+| `Blacklisted` | Phone-banned (terminal) | many |  |
 | `TalentPool` | Parked, full history retained | many | Applied, Shortlisted, Withdrawn, Blacklisted |
 
 The transition map is enforced server-side by `assertHrManagedTransition()` in `server/services/interviewWorkflow.js`. **Terminal states** cannot be transitioned out of (except `TalentPool`, `HODRejected`, `Round{N}Rejected`, `SalaryRejected` which allow re-entry into the active pipeline).
@@ -355,14 +355,14 @@ The `first: true` flag picks the earliest match (used for "first interview sched
 ### 6.3 Defined pairs
 
 **Requisition lifecycle**
-- `req_raised_to_first_approval` — submitted_at → first approval audit row
-- `req_raised_to_final_approval` — submitted_at → approved_at
-- `req_approved_to_job_created` — approved_at → linked job.created_at
+- `req_raised_to_first_approval`  submitted_at → first approval audit row
+- `req_raised_to_final_approval`  submitted_at → approved_at
+- `req_approved_to_job_created`  approved_at → linked job.created_at
 
 **Job lifecycle**
-- `job_created_to_first_application` — job.created_at → first application creation audit
-- `job_created_to_first_offer` — job.created_at → first `application.offered` event
-- `job_created_to_first_join` — job.created_at → first `application.joined` event
+- `job_created_to_first_application`  job.created_at → first application creation audit
+- `job_created_to_first_offer`  job.created_at → first `application.offered` event
+- `job_created_to_first_join`  job.created_at → first `application.joined` event
 
 **Per-application stage TATs**
 - `applied_to_shortlisted`
@@ -377,7 +377,7 @@ The `first: true` flag picks the earliest match (used for "first interview sched
 - `offer_signed_to_joined`
 
 **End-to-end**
-- `applied_to_joined` — full journey
+- `applied_to_joined`  full journey
 
 ### 6.4 "Show working" modal
 
@@ -489,7 +489,7 @@ Failed attempts retry up to 5 times then move to `failed`.
 
 ## 9. Database Schema Reference
 
-All tables defined in `server/migrations/run.js`. **Idempotent** — safe to re-run. Below: every table grouped by domain.
+All tables defined in `server/migrations/run.js`. **Idempotent**  safe to re-run. Below: every table grouped by domain.
 
 ### 9.1 Identity & Access
 
@@ -782,7 +782,7 @@ GET    /mis/time-to-fill                    job-level fill TAT
 GET    /mis/source-mix                      source-wise totals
 GET    /mis/department-health               per-department metrics
 GET    /mis/backouts-summary                rejected/dropout reasons
-GET    /mis/raw-export                      one row per application — every column
+GET    /mis/raw-export                      one row per application  every column
 GET    /mis/jobs-export?include_applicants= one row per job (or job × app)
 GET    /mis/detailed-open-positions         workbook-style aging report
 POST   /mis/assistant                       { question } → AI answer
@@ -863,16 +863,16 @@ npm run dev
 ### 11.3 Demo data
 
 HR Admin can:
-- **Seed demo** — populates BUs, jobs, applicants for screenshots/demos
-- **Clear demo** — wipes all demo-tagged data
-- **Run full demo** — animates a candidate through the entire flow
+- **Seed demo**  populates BUs, jobs, applicants for screenshots/demos
+- **Clear demo**  wipes all demo-tagged data
+- **Run full demo**  animates a candidate through the entire flow
 
 ### 11.4 Logs & monitoring
 
-- `email_log` — every outbound email with delivery status
-- `audit_trail` — every mutation
-- `timeline_events` — polymorphic event log for entity timelines
-- `scheduled_reminders` — pending + sent + failed reminders
+- `email_log`  every outbound email with delivery status
+- `audit_trail`  every mutation
+- `timeline_events`  polymorphic event log for entity timelines
+- `scheduled_reminders`  pending + sent + failed reminders
 
 ---
 
@@ -890,11 +890,11 @@ HR Admin can:
 | Status transition rejected | Move violates the transition map | See [§5 Application Status Map](#5-application-status-map) |
 | TAT shows "missing" for "from" or "to" | The required event hasn't been emitted yet | Confirm the underlying transition wrote a `timeline_events` or `audit_trail` row |
 | Email log shows `delivery_status='failed'` | Graph credentials invalid or sender not licensed | Verify `GRAPH_*` env vars |
-| MIS shows wrong recruiter rows | GROUP BY mismatch between SELECT and aggregation | Already fixed in `routes/mis.js` — uses `COALESCE(...)` consistently |
+| MIS shows wrong recruiter rows | GROUP BY mismatch between SELECT and aggregation | Already fixed in `routes/mis.js`  uses `COALESCE(...)` consistently |
 
 ---
 
-## Appendix A — File Map
+## Appendix A  File Map
 
 ### Server
 | File | Purpose |
@@ -921,7 +921,7 @@ HR Admin can:
 ### Client
 | File | Purpose |
 |---|---|
-| `client/src/styles/index.css` | Base tokens — Workday/Greenhouse-flavoured |
+| `client/src/styles/index.css` | Base tokens  Workday/Greenhouse-flavoured |
 | `client/src/styles/v2.css` | Premium animations, gradients, primitives layer |
 | `client/src/components/ui/v2.jsx` | Hero, KPI, StatusPillV2, TimelineRail, WorkingModal |
 | `client/src/components/ui/v2plus.jsx` | AuroraHero, LoudKPI, RingProgress, Sparkline, Marquee, AnimatedNumber, MagneticButton |
@@ -935,4 +935,4 @@ HR Admin can:
 
 ---
 
-*End of guide. Questions or gaps? Open `/audit` to see exactly what happened — every action ever taken in the system is documented there in plain English with IST timestamps.*
+*End of guide. Questions or gaps? Open `/audit` to see exactly what happened  every action ever taken in the system is documented there in plain English with IST timestamps.*

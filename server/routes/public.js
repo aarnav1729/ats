@@ -37,7 +37,7 @@ const upload = multer({
 const router = Router();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /jobs/:jobId  —  Public job detail (QR links, shared URLs)
+// GET /jobs/:jobId    Public job detail (QR links, shared URLs)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/jobs/:jobId', async (req, res) => {
   try {
@@ -90,7 +90,7 @@ router.get('/jobs/:jobId', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /parse-resume  —  Accept a resume file, extract text, AI-parse, return
+// POST /parse-resume    Accept a resume file, extract text, AI-parse, return
 // Does NOT create an application. Used by the public job page to pre-fill.
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/parse-resume', upload.single('resume'), async (req, res) => {
@@ -126,7 +126,7 @@ router.post('/parse-resume', upload.single('resume'), async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /jobs/:jobId/apply  —  Candidate-facing apply endpoint.
+// POST /jobs/:jobId/apply    Candidate-facing apply endpoint.
 // Accepts either multipart (with `resume` file) OR JSON with an already-uploaded
 // `resume_path` / `resume_file_name` from a prior /parse-resume call.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -155,7 +155,7 @@ router.post('/jobs/:jobId/apply', upload.single('resume'), async (req, res) => {
 
     const payload = { ...(req.body || {}) };
 
-    // Blacklist gate — phone-based ban check before anything else.
+    // Blacklist gate  phone-based ban check before anything else.
     const phoneNorm = String(payload.candidate_phone || '').replace(/\D/g, '').slice(-12);
     if (phoneNorm) {
       const banned = await pool.query(
@@ -205,7 +205,7 @@ router.post('/jobs/:jobId/apply', upload.single('resume'), async (req, res) => {
     if (job.recruiter_email) {
       await sendNotificationEmail({
         to: job.recruiter_email,
-        subject: `New self-apply: ${row.candidate_name} — ${job.job_title || job.job_id}`,
+        subject: `New self-apply: ${row.candidate_name}  ${job.job_title || job.job_id}`,
         body: `Candidate ${row.candidate_name} (${row.candidate_email}) applied via the public link for ${job.job_title || job.job_id}. Application ID: ${row.application_id}.`,
       }).catch((err) => console.error('Recruiter notify error:', err.message));
     }

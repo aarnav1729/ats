@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { timelineAPI } from '../services/api';
 
 /**
- * Timeline — universal event stream viewer for any entity.
+ * Timeline  universal event stream viewer for any entity.
  *
  * Props:
  *   entityType: 'requisition' | 'job' | 'application' | 'candidate'
@@ -179,7 +179,7 @@ export default function Timeline({ entityType, entityId, includeRelated = true, 
                   {ev.actor_email && <span>by <strong style={{ color: 'var(--text-body)' }}>{ev.actor_email}</strong>{ev.actor_role ? ` (${ev.actor_role})` : ''}</span>}
                   {(ev.from_state || ev.to_state) && (
                     <span>
-                      {ev.from_state || '—'} → <strong style={{ color: 'var(--text-body)' }}>{ev.to_state || '—'}</strong>
+                      {ev.from_state || ''} → <strong style={{ color: 'var(--text-body)' }}>{ev.to_state || ''}</strong>
                     </span>
                   )}
                   {durDays && idx > 0 && (

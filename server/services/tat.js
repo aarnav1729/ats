@@ -5,13 +5,13 @@
 // MIS dashboards, raw exports, drilldowns, and API responses.
 //
 // Each PAIR has:
-//   id            — stable machine id (used in URLs / exports)
-//   label         — human label
-//   level         — 'requisition' | 'job' | 'application'
-//   from          — { source: 'timeline_events' | 'audit_trail' | 'column', match: …}
-//   to            — same shape as `from`
-//   description   — plain-English definition shown in the working modal
-//   excludeWhen   — optional: array of conditions that pause the clock (e.g., job on hold)
+//   id             stable machine id (used in URLs / exports)
+//   label          human label
+//   level          'requisition' | 'job' | 'application'
+//   from           { source: 'timeline_events' | 'audit_trail' | 'column', match: …}
+//   to             same shape as `from`
+//   description    plain-English definition shown in the working modal
+//   excludeWhen    optional: array of conditions that pause the clock (e.g., job on hold)
 //
 // `match` shapes:
 //   { source:'column',         table:'requisitions', column:'created_at' }
@@ -192,10 +192,10 @@ async function resolveSide(side, { entityId, entityType, scopeJobId, scopeRequis
       return r.rows[0] ? { ts: r.rows[0].ts, row: r.rows[0], source } : { ts: null };
     }
     const tbl = side.table;
-    const idCol = tbl === 'jobs' ? 'job_id' : 'id';
+    const where = tbl === 'jobs' ? `(id::text = $1 OR job_id = $1)` : `id::text = $1`;
     const r = await pool.query(
-      `SELECT ${side.column} AS ts, * FROM ${tbl} WHERE ${idCol} = $1 LIMIT 1`,
-      [entityId]
+      `SELECT ${side.column} AS ts, * FROM ${tbl} WHERE ${where} LIMIT 1`,
+      [String(entityId)]
     );
     return r.rows[0] ? { ts: r.rows[0].ts, row: r.rows[0], source } : { ts: null };
   }
@@ -275,7 +275,7 @@ export async function calculateTat(pairId, { entityId, entityType, scopeJobId, s
 }
 
 export function humanDuration(seconds) {
-  if (seconds == null) return '—';
+  if (seconds == null) return '';
   if (seconds < 60) return `${seconds}s`;
   const m = Math.floor(seconds / 60);
   if (m < 60) return `${m}m ${seconds % 60}s`;

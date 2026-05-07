@@ -620,7 +620,7 @@ export default function JobDetail() {
         {shouldShowSchedule && (
           <button
             type="button"
-            onClick={() => navigate(`/applications/${application.id}/schedule`)}
+            onClick={() => navigate(`/applications/${application.id}/workflow`)}
             className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
           >
             Scheduling
@@ -799,7 +799,7 @@ export default function JobDetail() {
           </div>
 
           {/* Queue table - full width, generous row spacing, action column right-aligned */}
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-visible overflow-anchor-none">
             {appLoading ? (
               <div className="flex items-center justify-center py-16">
                 <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-indigo-600" />
@@ -810,7 +810,7 @@ export default function JobDetail() {
                 <p className="mt-1 text-xs text-slate-500">Try clearing the search or adding candidates from the buttons above.</p>
               </div>
             ) : (
-              <div className="table-container w-full">
+              <div className="table-container w-full" style={{ overflow: 'visible' }}>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.06em] text-slate-500">
@@ -844,9 +844,9 @@ export default function JobDetail() {
                             <p className="mt-1 max-w-[240px] text-xs text-red-600">{app.rejection_reason}</p>
                           )}
                         </td>
-                        <td className="px-4 py-4 align-top text-slate-600">{app.source || '—'}</td>
+                        <td className="px-4 py-4 align-top text-slate-600">{app.source || ''}</td>
                         <td className="px-4 py-4 align-top text-slate-500">{new Date(app.created_at).toLocaleDateString()}</td>
-                        <td className="px-4 py-4 align-top text-slate-600">{app.recruiter_email || '—'}</td>
+                        <td className="px-4 py-4 align-top text-slate-600">{app.recruiter_email || ''}</td>
                         <td className="relative overflow-visible px-4 py-4 align-top">
                           <div className="flex flex-col items-end gap-2">
                             <div className="flex items-center gap-2">
@@ -997,7 +997,7 @@ export default function JobDetail() {
               ].map(([label, value]) => (
                 <div key={label}>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</p>
-                  <p className="mt-1 text-sm text-slate-900 break-words">{value || <span className="text-slate-400">—</span>}</p>
+                  <p className="mt-1 text-sm text-slate-900 break-words">{value || <span className="text-slate-400"></span>}</p>
                 </div>
               ))}
             </div>
@@ -1012,11 +1012,11 @@ export default function JobDetail() {
             <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Min compensation</p>
-                <p className="mt-1 text-sm text-slate-900">{job.compensation_min != null ? `${job.compensation_currency || 'INR'} ${Number(job.compensation_min).toLocaleString()}` : <span className="text-slate-400">—</span>}</p>
+                <p className="mt-1 text-sm text-slate-900">{job.compensation_min != null ? `${job.compensation_currency || 'INR'} ${Number(job.compensation_min).toLocaleString()}` : <span className="text-slate-400"></span>}</p>
               </div>
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Max compensation</p>
-                <p className="mt-1 text-sm text-slate-900">{job.compensation_max != null ? `${job.compensation_currency || 'INR'} ${Number(job.compensation_max).toLocaleString()}` : <span className="text-slate-400">—</span>}</p>
+                <p className="mt-1 text-sm text-slate-900">{job.compensation_max != null ? `${job.compensation_currency || 'INR'} ${Number(job.compensation_max).toLocaleString()}` : <span className="text-slate-400"></span>}</p>
               </div>
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Visibility</p>

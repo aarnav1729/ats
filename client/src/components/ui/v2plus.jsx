@@ -1,11 +1,11 @@
-// v2.1 primitives — drop-in companions to v2.jsx that consume the new
+// v2.1 primitives  drop-in companions to v2.jsx that consume the new
 // award-tier styles. These are CSS-driven; the JS only handles state +
 // mounting effects.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 // ──────────────────────────────────────────────────────────────────────────
-// AnimatedNumber — counts up to a target when it scrolls into view.
+// AnimatedNumber  counts up to a target when it scrolls into view.
 // Used for KPIs, totals, raw export counts.
 // ──────────────────────────────────────────────────────────────────────────
 export function AnimatedNumber({ value, decimals = 0, prefix = '', suffix = '', duration = 900 }) {
@@ -47,7 +47,7 @@ export function AnimatedNumber({ value, decimals = 0, prefix = '', suffix = '', 
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Aurora hero — used at the top of marquee pages (Dashboard, Login, TAT, MIS)
+// Aurora hero  used at the top of marquee pages (Dashboard, Login, TAT, MIS)
 // ──────────────────────────────────────────────────────────────────────────
 export function AuroraHero({ eyebrow, title, subtitle, actions, kpis }) {
   return (
@@ -74,7 +74,7 @@ export function AuroraHero({ eyebrow, title, subtitle, actions, kpis }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Loud KPI — full-bleed primary metric with aurora background
+// Loud KPI  full-bleed primary metric with aurora background
 // ──────────────────────────────────────────────────────────────────────────
 export function LoudKPI({ eyebrow, value, foot, prefix, suffix }) {
   return (
@@ -89,7 +89,7 @@ export function LoudKPI({ eyebrow, value, foot, prefix, suffix }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// RingProgress — conic-gradient ring with center label
+// RingProgress  conic-gradient ring with center label
 // ──────────────────────────────────────────────────────────────────────────
 export function RingProgress({ value = 0, label, color = '#4f46e5' }) {
   const ref = useRef(null);
@@ -119,7 +119,7 @@ export function RingProgress({ value = 0, label, color = '#4f46e5' }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Marquee — horizontal scroll of chips/messages (status ticker)
+// Marquee  horizontal scroll of chips/messages (status ticker)
 // ──────────────────────────────────────────────────────────────────────────
 export function Marquee({ items }) {
   const doubled = [...items, ...items];
@@ -138,7 +138,7 @@ export function Marquee({ items }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// GradientBorderCard — animated border for premium content
+// GradientBorderCard  animated border for premium content
 // ──────────────────────────────────────────────────────────────────────────
 export function GradientBorderCard({ children, className = '' }) {
   return (
@@ -149,7 +149,7 @@ export function GradientBorderCard({ children, className = '' }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// MagneticButton — exaggerated lift + glow on hover
+// MagneticButton  exaggerated lift + glow on hover
 // ──────────────────────────────────────────────────────────────────────────
 export function MagneticButton({ children, onClick, type = 'button', tone = 'primary' }) {
   const cls = tone === 'primary' ? 'v2-btn-primary v2-magnetic' : 'v2-btn-ghost v2-magnetic';
@@ -157,7 +157,7 @@ export function MagneticButton({ children, onClick, type = 'button', tone = 'pri
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Sparkline — tiny inline SVG chart for trend lines on KPIs
+// Sparkline  tiny inline SVG chart for trend lines on KPIs
 // ──────────────────────────────────────────────────────────────────────────
 export function Sparkline({ values = [], width = 90, height = 26, color = '#4f46e5' }) {
   if (!values.length) return null;
@@ -185,7 +185,7 @@ export function Sparkline({ values = [], width = 90, height = 26, color = '#4f46
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// ScrollReveal — IntersectionObserver-driven enter animation.
+// ScrollReveal  IntersectionObserver-driven enter animation.
 // Drop around any block to fade it in when it scrolls into view.
 // ──────────────────────────────────────────────────────────────────────────
 export function ScrollReveal({ children, delay = 0, as: Tag = 'div', className = '' }) {
@@ -202,14 +202,14 @@ export function ScrollReveal({ children, delay = 0, as: Tag = 'div', className =
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// SectionEyebrow — small leading-bar text used above section headers
+// SectionEyebrow  small leading-bar text used above section headers
 // ──────────────────────────────────────────────────────────────────────────
 export function SectionEyebrow({ children }) {
   return <p className="v2-eyebrow">{children}</p>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// FloatingField — input with a floating label
+// FloatingField  input with a floating label
 // ──────────────────────────────────────────────────────────────────────────
 export function FloatingField({ label, value, onChange, type = 'text', name, placeholder = ' ' }) {
   return (

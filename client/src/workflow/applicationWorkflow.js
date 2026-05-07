@@ -249,31 +249,49 @@ export function getPrimaryWorkflowAction(application) {
   const status = String(application?.status || '');
   switch (status) {
     case 'InQueue':
-      return { kind: 'transition', nextStatus: 'Applied', label: 'Start Screening' };
+      return { kind: 'transition', nextStatus: 'Applied', label: 'Start Screening - Review & Decide' };
     case 'Applied':
-      return { kind: 'transition', nextStatus: 'Shortlisted', label: 'Shortlist Candidate' };
+      return { kind: 'transition', nextStatus: 'Shortlisted', label: 'Shortlist - Schedule Initial Call' };
     case 'Shortlisted':
-      return { kind: 'plan_rounds', label: 'Plan Interview Process' };
+      if (application?.no_of_rounds > 0) {
+        return { kind: 'transition', nextStatus: 'AwaitingHODResponse', label: 'Route to HOD for Review' };
+      }
+      return { kind: 'plan_rounds', label: 'Plan Interview Process - Set Rounds & Panel' };
     case 'AwaitingHODResponse':
-      return { kind: 'wait', label: 'Waiting for HOD / Interviewer Review' };
+      if (application?.hod_email) {
+        return { kind: 'wait', label: 'Waiting for HOD Review' };
+      }
+      return { kind: 'assign_hod', label: 'Assign HOD for Interview Review' };
     case 'AwaitingInterviewScheduling':
-      return { kind: 'open_schedule', label: 'Open Scheduling Workspace' };
+      return { kind: 'open_schedule', label: 'Schedule Interview - Propose Time Slots' };
     case 'Round1':
     case 'Round2':
     case 'Round3':
-      return { kind: 'open_schedule', label: 'Manage Schedule, Reminders & No-Show' };
+      const roundNum = status.replace('Round', '');
+      return { kind: 'open_schedule', label: `Round ${roundNum} - Manage Schedule & Collect Feedback` };
     case 'AwaitingFeedback':
-      return { kind: 'wait_feedback', label: 'Await Reviewer Feedback' };
+      return { kind: 'remind_feedback', label: 'Remind Interviewer for Feedback' };
     case 'Selected':
-      return { kind: 'transition', nextStatus: 'OfferInProcess', label: 'Start Offer & Documents' };
+      return { kind: 'transition', nextStatus: 'DocumentsInProgress', label: 'Start Document Collection' };
+    case 'DocumentsInProgress':
+      return { kind: 'transition', nextStatus: 'DocumentsCleared', label: 'Clear Documents & Upload to Portal' };
+    case 'DocumentsCleared':
+      return { kind: 'ctc_breakup', label: 'Send CTC Breakup to Candidate' };
+    case 'CTCSent':
+    case 'CTCAcceptance':
+      return { kind: 'wait_ctc', label: 'Waiting for Candidate CTC Response' };
+    case 'CTCAccepted':
+      return { kind: 'transition', nextStatus: 'OfferInProcess', label: 'Start Offer Processing' };
     case 'OfferInProcess':
-      return { kind: 'transition', nextStatus: 'Offered', label: 'Mark Offer Released' };
+      return { kind: 'transition', nextStatus: 'Offered', label: 'Release Formal Offer Letter' };
     case 'Offered':
-      return { kind: 'transition', nextStatus: 'OfferAccepted', label: 'Mark Offer Accepted' };
+      return { kind: 'transition', nextStatus: 'OfferAccepted', label: 'Confirm Candidate Joined' };
     case 'OfferAccepted':
       return { kind: 'transition', nextStatus: 'Joined', label: 'Mark Candidate Joined' };
+    case 'Joined':
+      return { kind: 'completed', label: 'Process Complete - Candidate Joined' };
     default:
-      return null;
+      return { kind: 'view', label: 'Review Application Details' };
   }
 }
 

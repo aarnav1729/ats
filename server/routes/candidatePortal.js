@@ -145,14 +145,14 @@ router.post('/:applicationId/invite', hrAny, async (req, res) => {
     const portalUrl = `${process.env.APP_URL || ''}/candidate`;
     const html = candidatePortalInviteEmail({
       candidateName: application.candidate_name,
-      jobTitle: application.job_title || '—',
+      jobTitle: application.job_title || '',
       portalUrl,
       username: email,
-      tempPassword: 'Sent separately via OTP login — use the "Request OTP" option on the login page.',
+      tempPassword: 'Sent separately via OTP login  use the "Request OTP" option on the login page.',
     });
     sendNotificationEmail({
       to: email,
-      title: `Welcome to Premier Energies — your onboarding portal is ready`,
+      title: `Welcome to Premier Energies  your onboarding portal is ready`,
       message: 'Your candidate onboarding portal is live. Sign in to begin your document checklist and next steps.',
       htmlBody: html,
       actionUrl: portalUrl,
@@ -343,7 +343,7 @@ router.get('/review-queue', hrAny, async (req, res) => {
     );
     const all = rows.rows;
     res.json({
-      documents: all.filter((d) => d.status === 'uploaded'), // legacy shape
+      documents: all,
       pending_upload: all.filter((d) => d.status === 'pending'),
       pending_review: all.filter((d) => d.status === 'uploaded'),
       reviewed: all.filter((d) => ['accepted', 'rejected'].includes(d.status)),
@@ -388,7 +388,7 @@ router.post('/documents/:docId/review', hrAny, async (req, res) => {
       stage: doc.stage,
       actorEmail: req.user.email,
       actorRole: req.user.role,
-      summary: `${doc.document_name} ${decision}${review_notes ? ` — ${review_notes}` : ''}`,
+      summary: `${doc.document_name} ${decision}${review_notes ? `  ${review_notes}` : ''}`,
       fromState: 'uploaded',
       toState: decision,
       payload: { review_notes },
@@ -451,7 +451,7 @@ router.post('/:applicationId/documents/request', hrAny, async (req, res) => {
 
     const html = documentRequestedEmail({
       candidateName: application.candidate_name,
-      jobTitle: application.job_title || '—',
+      jobTitle: application.job_title || '',
       stage,
       items: [{ document_name, description }],
       portalUrl: `${process.env.APP_URL || ''}/candidate`,
@@ -512,13 +512,13 @@ router.post('/:applicationId/ctc-request', hrAny, async (req, res) => {
 
     const html = ctcAcceptanceEmail({
       candidateName: application.candidate_name,
-      jobTitle: application.job_title || '—',
+      jobTitle: application.job_title || '',
       ctcText: ctc_text || 'See attached details',
       portalUrl: `${process.env.APP_URL || ''}/candidate`,
     });
     sendNotificationEmail({
       to: application.candidate_email,
-      title: `CTC offer sheet — please review`,
+      title: `CTC offer sheet  please review`,
       message: 'Your compensation summary is ready for review.',
       htmlBody: html,
       actionUrl: '/candidate',
@@ -535,7 +535,7 @@ router.post('/:applicationId/ctc-request', hrAny, async (req, res) => {
 router.post('/ctc-request/:requestId/respond', candidateOnly, async (req, res) => {
   try {
     const { requestId } = req.params;
-    const { decision, response_notes } = req.body || {}; // 'accepted' | 'declined' | 'renegotiated'
+    const { decision, response_notes, signature_data } = req.body || {}; // 'accepted' | 'declined' | 'renegotiated'
     if (!['accepted', 'declined', 'renegotiated'].includes(decision)) {
       return res.status(400).json({ error: 'Invalid decision' });
     }
@@ -555,9 +555,9 @@ router.post('/ctc-request/:requestId/respond', candidateOnly, async (req, res) =
     }
 
     const updated = await pool.query(
-      `UPDATE ctc_acceptance_requests SET status = $1, response_notes = $2, responded_at = NOW()
-       WHERE id = $3 RETURNING *`,
-      [decision, response_notes || null, rq.rows[0].id]
+      `UPDATE ctc_acceptance_requests SET status = $1, response_notes = $2, signature_data = $3, responded_at = NOW()
+       WHERE id = $4 RETURNING *`,
+      [decision, response_notes || null, signature_data || null, rq.rows[0].id]
     );
 
     await logTimeline({
@@ -566,9 +566,19 @@ router.post('/ctc-request/:requestId/respond', candidateOnly, async (req, res) =
       eventType: `ctc.${decision}`,
       actorEmail: req.user.email,
       actorRole: 'applicant',
-      summary: `Candidate ${decision} CTC offer${response_notes ? ` — ${response_notes}` : ''}`,
-      payload: { request_id: updated.rows[0].id, response_notes },
+      summary: `Candidate ${decision} CTC offer${response_notes ? `  ${response_notes}` : ''}${signature_data ? ' (signed)' : ''}`,
+      payload: { request_id: updated.rows[0].id, response_notes, has_signature: !!signature_data },
     });
+
+    if (signature_data) {
+      await logAudit({
+        actionBy: req.user.email,
+        actionType: 'accept',
+        entityType: 'ctc_acceptance',
+        entityId: updated.rows[0].id,
+        afterState: { decision, has_signature: true },
+      });
+    }
 
     // Notify requesting recruiter
     const requester = rq.rows[0].requested_by;

@@ -3,11 +3,23 @@ import pool from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.js';
 import { sendNotificationEmail } from '../services/email.js';
+import { candidatePortalInviteEmail } from '../services/emailTemplates.js';
 import { syncInterviewCalendarMeeting } from '../services/teamsCalendar.js';
 import { ensureInterviewTasksForRound } from '../services/interviewWorkflow.js';
 
 const router = Router();
 const adminOrInterviewer = requireRole('hr_admin', 'hr_recruiter', 'interviewer', 'hod');
+
+const DEFAULT_POST_SELECTION_CHECKLIST = [
+  { stage: 'post_selection', name: 'Updated resume (latest)', description: 'PDF preferred; include last 3 roles and key achievements.' },
+  { stage: 'post_selection', name: 'PAN Card', description: 'Clear scan of both sides.' },
+  { stage: 'post_selection', name: 'Aadhaar Card', description: 'Masked version acceptable.' },
+  { stage: 'post_selection', name: 'Passport photo', description: 'Recent, formal, white background.' },
+  { stage: 'before_offer_release', name: 'Educational certificates', description: 'Degree + 10th + 12th marksheets.' },
+  { stage: 'before_offer_release', name: 'Previous employment proof', description: 'Last 2 employers: offer letter, relieving letter, latest 3 payslips.' },
+  { stage: 'before_joining', name: 'Signed offer letter', description: 'Countersigned scan with date.' },
+  { stage: 'before_joining', name: 'Background check consent', description: 'We will share a pre-filled form for e-signature.' },
+];
 
 function canSuggestSlots(status) {
   return ['AwaitingHODResponse', 'AwaitingInterviewScheduling', 'Round1', 'Round2', 'Round3'].includes(status);
@@ -36,6 +48,85 @@ function normalizeSuggestedInterviewers(value = []) {
       return { round_number: roundNumber, interviewers };
     })
     .filter(Boolean);
+}
+
+async function ensureCandidatePortalInvite(application, actorEmail, actorRole) {
+  const email = String(application.candidate_email || '').toLowerCase().trim();
+  if (!email) return null;
+
+  const existing = await pool.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1)', [email]);
+  let userId;
+  if (existing.rows.length) {
+    userId = existing.rows[0].id;
+    await pool.query(
+      `UPDATE users
+       SET is_active = true,
+           role = CASE WHEN role IS NULL OR role = '' THEN 'applicant' ELSE role END,
+           name = COALESCE(NULLIF(name,''), $2)
+       WHERE id = $1`,
+      [userId, application.candidate_name]
+    );
+  } else {
+    const inserted = await pool.query(
+      `INSERT INTO users (email, role, name, is_active)
+       VALUES ($1, 'applicant', $2, true)
+       RETURNING id`,
+      [email, application.candidate_name]
+    );
+    userId = inserted.rows[0].id;
+  }
+
+  await pool.query(
+    `UPDATE applications
+     SET portal_user_id = $1,
+         portal_invited_at = COALESCE(portal_invited_at, NOW()),
+         updated_at = NOW()
+     WHERE id = $2`,
+    [userId, application.id]
+  );
+
+  const existingDocs = await pool.query(
+    'SELECT COUNT(*)::int AS n FROM candidate_documents WHERE application_id = $1',
+    [application.id]
+  );
+  if (existingDocs.rows[0].n === 0) {
+    for (const item of DEFAULT_POST_SELECTION_CHECKLIST) {
+      await pool.query(
+        `INSERT INTO candidate_documents (application_id, stage, document_name, description, status, requested_by, kind)
+         VALUES ($1, $2, $3, $4, 'pending', $5, 'document')`,
+        [application.id, item.stage, item.name, item.description, actorEmail]
+      );
+    }
+  }
+
+  const portalUrl = `${process.env.APP_URL || ''}/candidate`;
+  const html = candidatePortalInviteEmail({
+    candidateName: application.candidate_name,
+    jobTitle: application.job_title || '',
+    portalUrl,
+    username: email,
+    tempPassword: 'Sent separately via OTP login - use the "Request OTP" option on the login page.',
+  });
+  sendNotificationEmail({
+    to: email,
+    title: 'Welcome to Premier Energies - your onboarding portal is ready',
+    message: 'Your candidate onboarding portal is live. Sign in to begin your document checklist and next steps.',
+    htmlBody: html,
+    actionUrl: portalUrl,
+  }).catch(() => {});
+
+  const { logTimeline } = await import('../services/timeline.js');
+  await logTimeline({
+    entityType: 'application',
+    entityId: application.application_id || application.id,
+    eventType: 'candidate.portal_invited',
+    actorEmail,
+    actorRole,
+    summary: 'Candidate portal account created and document checklist seeded after final shortlist',
+    payload: { user_id: userId, email },
+  });
+
+  return { userId, email };
 }
 
 function formatSuggestedInterviewersText(suggestions = []) {
@@ -89,7 +180,7 @@ router.get('/', adminOrInterviewer, async (req, res) => {
     const offset = (page - 1) * limit;
     const canViewAll = req.user.role === 'hr_admin' || req.user.role === 'hr_recruiter';
 
-    let query = `
+let query = `
       SELECT ifb.*,
              ifb.id as _id,
              ifb.round_number as round,
@@ -101,15 +192,16 @@ router.get('/', adminOrInterviewer, async (req, res) => {
              a.recruiter_email,
              a.ats_job_id,
              a.status as app_status,
+             a.no_of_rounds,
              a.suggested_interview_datetime1,
              a.suggested_interview_datetime2,
              j.job_title,
              j.job_id as job_code,
              j.id as job_record_id
-      FROM interview_feedback ifb
-      JOIN applications a ON ifb.application_id = a.id
-      LEFT JOIN jobs j ON ifb.job_id = j.job_id
-      WHERE 1=1
+       FROM interview_feedback ifb
+       JOIN applications a ON ifb.application_id = a.id
+       LEFT JOIN jobs j ON ifb.job_id = j.job_id
+       WHERE 1=1
     `;
     const params = [];
 
@@ -166,7 +258,7 @@ router.get('/', adminOrInterviewer, async (req, res) => {
 
 router.get('/:id', adminOrInterviewer, async (req, res) => {
   try {
-    const result = await pool.query(`
+const result = await pool.query(`
       SELECT ifb.*,
              ifb.id as _id,
              ifb.round_number as round,
@@ -193,6 +285,7 @@ router.get('/:id', adminOrInterviewer, async (req, res) => {
              a.recruiter_email,
              a.ats_job_id,
              a.status as app_status,
+             a.no_of_rounds,
              a.suggested_interview_datetime1,
              a.suggested_interview_datetime2,
              a.resume_path,
@@ -206,10 +299,10 @@ router.get('/:id', adminOrInterviewer, async (req, res) => {
              j.job_id as job_code,
              j.id as job_record_id,
              j.job_description
-      FROM interview_feedback ifb
-      JOIN applications a ON ifb.application_id = a.id
-      LEFT JOIN jobs j ON ifb.job_id = j.job_id
-      WHERE ifb.id = $1
+       FROM interview_feedback ifb
+       JOIN applications a ON ifb.application_id = a.id
+       LEFT JOIN jobs j ON ifb.job_id = j.job_id
+       WHERE ifb.id = $1
     `, [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
     const row = result.rows[0];
@@ -341,14 +434,17 @@ router.put('/:id/feedback', adminOrInterviewer, async (req, res) => {
       if (round >= totalRounds) {
         // Final-round shortlist → mark Selected then immediately advance to
         // OfferInProcess so HR/clearance flow kicks in without a manual hop.
-        await pool.query(
-          "UPDATE applications SET status = 'OfferInProcess', interviewer_final_decision = 'shortlist', updated_at = NOW() WHERE id = $1",
-          [application.id]
-        );
-        if (application.recruiter_email) {
+	        await pool.query(
+	          "UPDATE applications SET status = 'OfferInProcess', interviewer_final_decision = 'shortlist', updated_at = NOW() WHERE id = $1",
+	          [application.id]
+	        );
+	        ensureCandidatePortalInvite(application, req.user.email, req.user.role).catch((err) => {
+	          console.error('Auto portal invite after final shortlist failed:', err);
+	        });
+	        if (application.recruiter_email) {
           await sendNotificationEmail(
             application.recruiter_email,
-            'Candidate cleared final round — start clearance',
+            'Candidate cleared final round  start clearance',
             `<p><strong>${application.candidate_name}</strong> cleared the final interview round and has been auto-moved to <strong>Offer In Process</strong>. Open clearance to begin offer prep.</p>`
           ).catch(() => {});
         }
@@ -428,7 +524,7 @@ router.put('/:id/reset-slots', adminOrInterviewer, async (req, res) => {
       eventType: 'interview.slots_reset',
       actorEmail: req.user.email,
       actorRole: req.user.role,
-      summary: `Round ${interview.round_number} rescheduled — interviewer asked to re-suggest slots${reason ? ` · ${reason}` : ''}`,
+      summary: `Round ${interview.round_number} rescheduled  interviewer asked to re-suggest slots${reason ? ` · ${reason}` : ''}`,
       payload: { round: interview.round_number, reason },
       toState: 'AwaitingHODResponse',
     });

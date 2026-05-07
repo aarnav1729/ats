@@ -50,7 +50,7 @@ function renderFacts(rows) {
           <p style="margin:0;font-size:10.5px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#64748b">${esc(label)}</p>
         </td>
         <td style="padding:12px 18px;border-bottom:${i === rows.length - 1 ? '0' : '1px solid #e2e8f0'};word-break:break-word">
-          <p style="margin:0;font-size:14px;font-weight:600;color:#0f172a;line-height:1.55">${value == null || value === '' ? '<span style="color:#94a3b8">—</span>' : esc(value)}</p>
+          <p style="margin:0;font-size:14px;font-weight:600;color:#0f172a;line-height:1.55">${value == null || value === '' ? '<span style="color:#94a3b8"></span>' : esc(value)}</p>
         </td>
       </tr>`
     )
@@ -160,53 +160,69 @@ export function renderBrandedEmail(opts) {
 
 export function candidatePortalInviteEmail({ candidateName, jobTitle, portalUrl, username, tempPassword }) {
   return renderBrandedEmail({
-    eyebrow: 'You are joining Premier Energies',
-    headline: `Welcome aboard, ${candidateName}!`,
-    lead: `You've been selected for the <strong>${jobTitle}</strong> role. We've set up your onboarding portal so you can track documents, share information, and complete pre-joining steps in one place.`,
+    eyebrow: 'Your Premier Energies Candidate Portal',
+    headline: `Welcome, ${candidateName}!`,
+    lead: `Congratulations on being shortlisted for the <strong>${jobTitle}</strong> position. We've created your personalized candidate portal where you can track your application status, upload required documents, and stay updated throughout the hiring process.`,
     sections: [
-      { type: 'heading', text: 'Your login credentials' },
-      { type: 'facts', rows: [['Login URL', portalUrl], ['Username', username], ['Temporary password', tempPassword]] },
+      { type: 'heading', text: 'Your Access Credentials' },
+      { type: 'facts', rows: [
+        ['Portal URL', portalUrl],
+        ['Username', username],
+        ['Temporary Password', tempPassword],
+      ]},
       {
         type: 'callout',
         tone: 'warning',
-        title: 'First login',
-        body: 'For your security, you will be asked to set a new password the first time you sign in.',
+        title: 'Important: Set Your Password',
+        body: 'On your first login, you will be prompted to create a new password. Please choose a strong password to secure your account.',
       },
-      { type: 'heading', text: 'What to do next' },
+      { type: 'heading', text: 'What You Can Do in Your Portal' },
       {
         type: 'steps',
         steps: [
-          { title: 'Sign in to the candidate portal', body: 'Use the credentials above at the login URL.' },
-          { title: 'Review your stage checklist', body: 'We\'ll show you every document we need at each stage - pre-offer, offer, joining, and beyond.' },
-          { title: 'Upload documents', body: 'Drag-and-drop files directly in the portal. Our recruiters will review and get back to you.' },
-          { title: 'Respond to CTC acceptance', body: 'If we share a CTC offer sheet, you can accept, ask questions, or request renegotiation right in the portal.' },
+          { title: 'Track Your Application', body: 'See where you are in the hiring process and what\'s coming next.' },
+          { title: 'Upload Documents', body: 'Submit any documents we request - resumes, certificates, ID proofs, etc.' },
+          { title: 'View CTC Offers', body: 'Review and respond to any compensation offers we share with you.' },
+          { title: 'Stay Updated', body: 'Receive notifications at each stage of your application.' },
         ],
       },
     ],
-    cta: { label: 'Go to your portal', url: portalUrl, secondary: 'Bookmark this link - you will come back often during onboarding.' },
-    footerNote: 'Questions? Reply to this email or reach out to your recruiter. Welcome to the Premier Energies family.',
+    cta: { label: 'Access Your Portal', url: portalUrl, secondary: 'This link is unique to you - please do not share it with others' },
+    footerNote: 'Need assistance? Reply to this email or contact your assigned recruiter. We\'re here to help!',
   });
 }
 
 export function documentRequestedEmail({ candidateName, jobTitle, stage, items, portalUrl }) {
+  const stageLabel = stage.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   return renderBrandedEmail({
-    eyebrow: 'Document request',
-    headline: `Action needed: ${items.length} document${items.length === 1 ? '' : 's'}`,
-    lead: `Hi ${candidateName}, we need a few documents from you to progress the <strong>${jobTitle}</strong> application through the <em>${stage.replace(/_/g, ' ')}</em> stage.`,
+    eyebrow: 'Document Requirement',
+    headline: `Documents required for your ${jobTitle} application`,
+    lead: `Dear ${candidateName}, to proceed with your application at Premier Energies, we need you to upload the following documents. This is required for the <strong>${stageLabel}</strong> stage of our hiring process.`,
     sections: [
       {
+        type: 'heading',
+        text: 'Required Documents',
+      },
+      {
         type: 'table',
-        headers: ['Document', 'Notes'],
-        rows: items.map((i) => [i.document_name || i.name, i.description || '—']),
+        headers: ['Document', 'Description'],
+        rows: items.map((i) => [i.document_name || i.name, i.description || 'Please upload the latest version']),
       },
       {
         type: 'callout',
         tone: 'info',
-        title: 'Reupload anytime',
-        body: 'If a reviewer asks for a correction, you can upload a fresh version - we keep version history automatically.',
+        title: 'Upload Instructions',
+        body: 'Log in to your candidate portal, navigate to the documents section, and upload each file. If a document needs correction, you can re-upload a new version at any time.',
+      },
+      {
+        type: 'facts',
+        rows: [
+          ['Portal Link', portalUrl],
+          ['Help', 'Contact your recruiter if you face any issues'],
+        ],
       },
     ],
-    cta: { label: 'Upload documents', url: portalUrl },
+    cta: { label: 'Upload Documents Now', url: portalUrl, secondary: 'Please upload within 3 days to keep your application on track' },
   });
 }
 
@@ -227,9 +243,9 @@ export function documentReviewedEmail({ candidateName, documentName, decision, r
 
 export function ctcAcceptanceEmail({ candidateName, jobTitle, ctcText, portalUrl }) {
   return renderBrandedEmail({
-    eyebrow: 'CTC offer sheet',
-    headline: `Your CTC offer is ready, ${candidateName}`,
-    lead: `We've prepared the detailed compensation summary for the <strong>${jobTitle}</strong> role. Please review and confirm at your convenience.`,
+    eyebrow: 'Offer Decision Required',
+    headline: `Your CTC Breakup is ready for your review, ${candidateName}`,
+    lead: `Thank you for your time and the discussions we've had throughout the interview process. We are pleased to extend the offer for the <strong>${jobTitle}</strong> position at Premier Energies. Please review the compensation details below.`,
     sections: [
       {
         type: 'raw',
@@ -238,11 +254,19 @@ export function ctcAcceptanceEmail({ candidateName, jobTitle, ctcText, portalUrl
       {
         type: 'callout',
         tone: 'info',
-        title: 'Three options',
-        body: '<strong>Accept</strong> to confirm the offer, <strong>Decline</strong> if you cannot proceed, or <strong>Renegotiate</strong> with a short note and our recruiter will come back to you.',
+        title: 'Your Response Options',
+        body: '<strong>Accept</strong> - Confirm your acceptance and sign to proceed.<br><strong>Decline</strong> - Let us know if you are not able to accept this offer.<br><strong>Renegotiate</strong> - Share your concerns or expectations and our team will get back to you.',
+      },
+      {
+        type: 'facts',
+        rows: [
+          ['Response Deadline', 'Please respond within 5 business days'],
+          ['Contact', 'Reach out to your recruiting contact for any questions'],
+        ],
       },
     ],
-    cta: { label: 'Respond to offer', url: portalUrl },
+    cta: { label: 'Review & Respond', url: portalUrl, secondary: 'Your prompt response helps us plan the joining date accordingly' },
+    footerNote: 'We look forward to welcoming you to the Premier Energies team.',
   });
 }
 
@@ -252,7 +276,7 @@ export function requisitionOnHoldEmail({ requisitionId, jobTitle, reason, notes,
     headline: `${requisitionId} placed on hold`,
     lead: `<strong>${jobTitle}</strong> is temporarily paused. Sourcing activity should stop until the hold is released. TAT for this window will be excluded from reporting.`,
     sections: [
-      { type: 'facts', rows: [['Requisition', requisitionId], ['Placed by', placedBy], ['Reason', reason], ['Notes', notes || '—']] },
+      { type: 'facts', rows: [['Requisition', requisitionId], ['Placed by', placedBy], ['Reason', reason], ['Notes', notes || '']] },
       { type: 'callout', tone: 'warning', title: 'Heads up', body: 'The hold window is still tracked separately in MIS so leadership can see the real cost of pauses.' },
     ],
     cta: { label: 'Open requisition', url: `${process.env.APP_URL || ''}/requisitions` },

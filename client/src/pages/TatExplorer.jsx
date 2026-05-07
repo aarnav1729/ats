@@ -187,13 +187,13 @@ export default function TatExplorer() {
                         {r.entity.candidate_email || r.entity.job_code || r.entity.business_unit_id}
                       </p>
                     </td>
-                    <td>{r.entity.status ? <StatusPillV2 status={r.entity.status} /> : '—'}</td>
+                    <td>{r.entity.status ? <StatusPillV2 status={r.entity.status} /> : ''}</td>
                     <td className="text-xs">{r.tat.from?.ts ? fmtIST(r.tat.from.ts) : <span className="text-slate-400">missing</span>}</td>
                     <td className="text-xs">{r.tat.to?.ts ? fmtIST(r.tat.to.ts) : <span className="text-slate-400">missing</span>}</td>
                     <td style={{ textAlign: 'right' }}>
                       {r.tat.duration_human
                         ? <span className="font-mono text-sm font-semibold text-slate-800">{r.tat.duration_human}</span>
-                        : <span className="text-xs text-slate-400">—</span>}
+                        : <span className="text-xs text-slate-400"></span>}
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <button
@@ -235,7 +235,7 @@ function WorkingDetail({ row, pair }) {
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 flex items-center justify-between">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Computed duration</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{row.tat.duration_human || '—'}</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{row.tat.duration_human || ''}</p>
         </div>
         <p className="text-xs text-slate-500 font-mono">
           {row.tat.duration_seconds != null ? `${row.tat.duration_seconds.toLocaleString()} seconds` : 'not computable'}
@@ -258,7 +258,7 @@ function ProvenanceCard({ label, tone, data }) {
     <div className={`rounded-lg border p-4 bg-white ${tone === 'indigo' ? 'border-indigo-200' : 'border-emerald-200'}`}>
       <p className={`text-[10px] font-bold uppercase tracking-[0.16em] ${tone === 'indigo' ? 'text-indigo-700' : 'text-emerald-700'}`}>{label}</p>
       <p className="text-base font-semibold text-slate-900 mt-2">{ts ? fmtIST(ts) : <span className="text-slate-400">missing</span>}</p>
-      <p className="text-xs text-slate-500 mt-1">Source: <span className="font-mono">{src || '—'}</span></p>
+      <p className="text-xs text-slate-500 mt-1">Source: <span className="font-mono">{src || ''}</span></p>
     </div>
   );
 }

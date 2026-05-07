@@ -244,7 +244,7 @@ export const HR_MANAGED_TRANSITIONS = {
   Round1Rejected: ['TalentPool'],
   Round2Rejected: ['TalentPool'],
   Round3Rejected: ['TalentPool'],
-  SalaryRejected: ['TalentPool', 'CTCSent'],
+  SalaryRejected: ['TalentPool', 'CTCSent', 'CTCAcceptance', 'CTCAccepted'],
 };
 
 // Hard-terminal states from which only data corrections are permitted.

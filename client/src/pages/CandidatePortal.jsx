@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { candidatePortalAPI } from '../services/api';
+import { candidatePortalAPI, ctcBreakupAPI } from '../services/api';
 import CandidateChatPanel from '../components/CandidateChatPanel';
 import OfferSignaturePanel from '../components/OfferSignaturePanel';
+import SignaturePad from '../components/SignaturePad';
 
 const STAGE_LABELS = {
   post_selection: 'After Selection',
@@ -127,10 +128,79 @@ function DocumentCard({ doc, onUpload }) {
   );
 }
 
+function CtcBreakupResponseCard({ breakup, onRespond, loading }) {
+  const [notes, setNotes] = useState('');
+  const [signature, setSignature] = useState(null);
+
+  return (
+    <div>
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-3">
+        <p className="text-xs font-semibold text-amber-800 mb-2">Sign to Accept or Decline</p>
+        <SignaturePad onChange={setSignature} height={100} />
+      </div>
+      <textarea
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        placeholder="Add a note (required if declining)"
+        style={{
+          width: '100%',
+          padding: '10px 12px',
+          borderRadius: 8,
+          border: '1px solid var(--line)',
+          fontSize: 13,
+          marginBottom: 12,
+          minHeight: 60,
+        }}
+      />
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button
+          type="button"
+          onClick={() => onRespond('accepted', signature, null)}
+          disabled={loading || !signature}
+          style={{
+            flex: 1,
+            padding: '10px 16px',
+            background: 'linear-gradient(135deg, #10b981, #34d399)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 8,
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: loading ? 'not-allowed' : 'pointer',
+            opacity: loading || !signature ? 0.6 : 1,
+          }}
+        >
+          {loading ? 'Submitting...' : 'Accept & Sign'}
+        </button>
+        <button
+          type="button"
+          onClick={() => onRespond('rejected', null, notes)}
+          disabled={loading || !notes.trim()}
+          style={{
+            flex: 1,
+            padding: '10px 16px',
+            background: '#fff',
+            color: '#ef4444',
+            border: '1px solid #ef4444',
+            borderRadius: 8,
+            fontWeight: 600,
+            fontSize: 13,
+            cursor: loading || !notes.trim() ? 'not-allowed' : 'pointer',
+            opacity: loading || !notes.trim() ? 0.6 : 1,
+          }}
+        >
+          Decline with Reason
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CtcRequestCard({ req, onRespond }) {
   const [decision, setDecision] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
+  const [signature, setSignature] = useState(null);
 
   async function submit(choice) {
     if (!choice) return;
@@ -138,10 +208,19 @@ function CtcRequestCard({ req, onRespond }) {
       toast.error('Please add a note explaining your decision');
       return;
     }
+    if (choice === 'accepted' && !signature) {
+      toast.error('Please sign to accept the CTC');
+      return;
+    }
     setBusy(true);
     try {
-      await candidatePortalAPI.respondCtc(req.id, { decision: choice, response_notes: notes });
+      await candidatePortalAPI.respondCtc(req.id, { 
+        decision: choice, 
+        response_notes: notes,
+        signature_data: signature,
+      });
       toast.success('Response recorded');
+      setSignature(null);
       onRespond?.();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Could not submit');
@@ -189,6 +268,10 @@ function CtcRequestCard({ req, onRespond }) {
 
       {pending ? (
         <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-xs font-semibold text-amber-800 mb-2">CTC Acceptance Signature</p>
+            <SignaturePad onChange={setSignature} height={120} />
+          </div>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
@@ -271,6 +354,15 @@ export default function CandidatePortal() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [ctcBreakup, setCtcBreakup] = useState(null);
+  const [ctcBreakupLoading, setCtcBreakupLoading] = useState(false);
+
+  async function loadCtcBreakup() {
+    try {
+      const res = await ctcBreakupAPI.myBreakup();
+      setCtcBreakup(res.data?.breakup || null);
+    } catch { setCtcBreakup(null); }
+  }
 
   async function load() {
     try {
@@ -285,8 +377,36 @@ export default function CandidatePortal() {
     }
   }
 
+  async function handleCtcBreakupResponse(decision, signature, notes) {
+    if (!ctcBreakup) return;
+    if (decision === 'accepted' && !signature) {
+      toast.error('Please sign to accept the CTC breakup');
+      return;
+    }
+    if (decision === 'rejected' && !notes?.trim()) {
+      toast.error('Please add a note explaining your decision');
+      return;
+    }
+    setCtcBreakupLoading(true);
+    try {
+      await ctcBreakupAPI.myRespond(ctcBreakup.id, {
+        decision,
+        signature_data: signature,
+        notes,
+      });
+      toast.success(decision === 'accepted' ? 'CTC breakup accepted' : 'CTC breakup rejected');
+      loadCtcBreakup();
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not submit response');
+    } finally {
+      setCtcBreakupLoading(false);
+    }
+  }
+
   useEffect(() => {
     load();
+    loadCtcBreakup();
   }, []);
 
   const grouped = useMemo(() => {
@@ -333,7 +453,7 @@ export default function CandidatePortal() {
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px' }}>
-      {/* Hero — explicit white text on guaranteed dark gradient. !important defeats
+      {/* Hero  explicit white text on guaranteed dark gradient. !important defeats
           any tailwind/preflight color reset that was bleeding into the inline styles. */}
       <div
         style={{
@@ -374,7 +494,7 @@ export default function CandidatePortal() {
         )}
       </div>
 
-      {/* Active offer letter — premium signature flow */}
+      {/* Active offer letter  premium signature flow */}
       <div style={{ marginBottom: 24 }}>
         <OfferSignaturePanel />
       </div>
@@ -397,6 +517,98 @@ export default function CandidatePortal() {
             {ctcRequests.map((r) => (
               <CtcRequestCard key={r.id} req={r} onRespond={load} />
             ))}
+          </div>
+        </section>
+      )}
+
+      {/* CTC Breakup - New Flow */}
+      {ctcBreakup && !ctcBreakup.candidate_decision && (
+        <section style={{ marginBottom: 32 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-main)', marginBottom: 12 }}>
+            Your Compensation Breakup
+          </h2>
+          <div
+            style={{
+              border: '1px solid var(--line)',
+              borderRadius: 'var(--radius-md)',
+              padding: 20,
+              background: 'var(--surface)',
+            }}
+          >
+            <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 12 }}>
+              Sent by {ctcBreakup.created_by_email} on {new Date(ctcBreakup.created_at).toLocaleString()} · Version {ctcBreakup.version}
+            </div>
+            {ctcBreakup.breakup_html && (
+              <div
+                style={{
+                  padding: 12,
+                  background: 'var(--surface-muted)',
+                  borderRadius: 8,
+                  overflow: 'auto',
+                  marginBottom: 16,
+                }}
+                dangerouslySetInnerHTML={{ __html: ctcBreakup.breakup_html }}
+              />
+            )}
+            {ctcBreakup.attachment_path && (
+              <a
+                href={ctcBreakup.attachment_path}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'inline-block',
+                  marginBottom: 16,
+                  fontSize: 13,
+                  color: 'var(--accent-blue)',
+                  textDecoration: 'underline',
+                }}
+              >
+                View attached CTC file{ctcBreakup.attachment_name ? `: ${ctcBreakup.attachment_name}` : ''}
+              </a>
+            )}
+            <CtcBreakupResponseCard breakup={ctcBreakup} onRespond={handleCtcBreakupResponse} loading={ctcBreakupLoading} />
+          </div>
+        </section>
+      )}
+
+      {ctcBreakup?.candidate_decision === 'accepted' && (
+        <section style={{ marginBottom: 32 }}>
+          <div
+            style={{
+              border: '1px solid #10b981',
+              borderRadius: 'var(--radius-md)',
+              padding: 16,
+              background: '#ecfdf5',
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#065f46' }}>
+              ✓ You have accepted the compensation breakup
+            </div>
+            <div style={{ fontSize: 12, color: '#047857', marginTop: 4 }}>
+              Accepted on {new Date(ctcBreakup.candidate_signed_at).toLocaleString()}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {ctcBreakup?.candidate_decision === 'rejected' && (
+        <section style={{ marginBottom: 32 }}>
+          <div
+            style={{
+              border: '1px solid #ef4444',
+              borderRadius: 'var(--radius-md)',
+              padding: 16,
+              background: '#fef2f2',
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#991b1b' }}>
+              ✗ You have rejected the compensation breakup
+            </div>
+            {ctcBreakup.candidate_decision_notes && (
+              <div style={{ fontSize: 13, color: '#b91c1c', marginTop: 4 }}>
+                Reason: {ctcBreakup.candidate_decision_notes}
+              </div>
+            )}
           </div>
         </section>
       )}

@@ -782,7 +782,7 @@ router.put('/:id', adminOrRecruiter, async (req, res) => {
             reason,
             placedBy: req.user.email,
           });
-          sendEmail(recipients, `Job on hold — ${updated.job_title}`, html).catch(() => {});
+          sendEmail(recipients, `Job on hold  ${updated.job_title}`, html).catch(() => {});
         }
         await logTimeline({
           entityType: 'job',
@@ -790,7 +790,7 @@ router.put('/:id', adminOrRecruiter, async (req, res) => {
           eventType: 'job.held',
           actorEmail: req.user.email,
           actorRole: req.user.role,
-          summary: `Job placed on hold — ${reason}`,
+          summary: `Job placed on hold  ${reason}`,
           payload: { reason, recipients },
           fromState: existing.status,
           toState: 'on_hold',

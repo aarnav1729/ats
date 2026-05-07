@@ -38,8 +38,8 @@ const compact = (v) => {
   if (n >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
   return String(Math.round(n));
 };
-const pct = (v) => (v == null ? '—' : `${Number(v).toFixed(1)}%`);
-const days = (v) => (v == null ? '—' : `${Number(v).toFixed(1)}d`);
+const pct = (v) => (v == null ? '' : `${Number(v).toFixed(1)}%`);
+const days = (v) => (v == null ? '' : `${Number(v).toFixed(1)}d`);
 const bucketForDays = (d) => {
   const n = toNumber(d);
   if (n <= 30) return RANGE_ORDER[0];
@@ -549,7 +549,7 @@ Only counts applications within the filter window. Hold-paused days are excluded
                     return (
                       <tr key={`${row.month || ''}-${row.recruiter_email || row.recruiter}`}>
                         <td style={{ fontWeight: 600 }}>{name}</td>
-                        <td style={{ color: 'var(--text-faint)', fontSize: 12 }}>{row.recruiter_email || '—'}</td>
+                        <td style={{ color: 'var(--text-faint)', fontSize: 12 }}>{row.recruiter_email || ''}</td>
                         <td style={{ textAlign: 'right', fontWeight: 600 }}>{toNumber(row.closures)}</td>
                         <td style={{ textAlign: 'right', color: 'var(--text-faint)' }}>{toNumber(row.pending_joins)}</td>
                         <td style={{ width: '30%' }}>
@@ -593,7 +593,7 @@ Counts every application where recruiter_email is attributed. Uses filters above
                     return (
                       <tr key={row.recruiter_email || row.recruiter}>
                         <td style={{ fontWeight: 600 }}>{name}</td>
-                        <td style={{ color: 'var(--text-faint)', fontSize: 12 }}>{row.recruiter_email || '—'}</td>
+                        <td style={{ color: 'var(--text-faint)', fontSize: 12 }}>{row.recruiter_email || ''}</td>
                         <td style={{ textAlign: 'right' }}>{toNumber(row.job_portal)}</td>
                         <td style={{ textAlign: 'right' }}>{toNumber(row.referral)}</td>
                         <td style={{ textAlign: 'right' }}>{toNumber(row.campus)}</td>

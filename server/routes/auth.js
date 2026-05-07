@@ -68,14 +68,44 @@ router.post('/verify-otp', async (req, res) => {
   }
 });
 
+router.get('/test-otp/:email', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const result = await pool.query(
+      'SELECT otp, created_at FROM otps WHERE email = $1 AND used = false ORDER BY created_at DESC LIMIT 1',
+      [email.toLowerCase()]
+    );
+    if (result.rows.length === 0) {
+      return res.json({ error: 'No OTP found' });
+    }
+    res.json({ otp: result.rows[0].otp, email });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/logout', authMiddleware, async (req, res) => {
   try {
+    const metadata = { reason: 'user_logout', role: req.user.role };
+
+    const loginEntry = await pool.query(
+      `SELECT id, created_at FROM audit_trail
+       WHERE action_by = $1 AND action_type = 'login'
+       ORDER BY created_at DESC LIMIT 1`,
+      [req.user.email]
+    );
+
+    if (loginEntry.rows.length > 0) {
+      const durationSecs = Math.round((Date.now() - new Date(loginEntry.rows[0].created_at).getTime()) / 1000);
+      metadata.session_duration_secs = durationSecs;
+    }
+
     await logAudit({
       actionBy: req.user.email,
       actionType: 'logout',
       entityType: 'session',
       entityId: req.user.id,
-      metadata: { reason: 'user_logout', role: req.user.role },
+      metadata,
     });
     res.json({ message: 'Logged out' });
   } catch (err) {

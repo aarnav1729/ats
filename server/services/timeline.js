@@ -1,7 +1,11 @@
 import pool from '../db.js';
 
+function getISTTimestamp() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+}
+
 /**
- * Timeline service — emit a typed event for any entity in the system.
+ * Timeline service  emit a typed event for any entity in the system.
  * Every call computes duration_since_prev_seconds automatically and flags
  * `hold_paused` if the entity (or its parent requisition) was on hold at
  * the moment of the event.
@@ -53,9 +57,10 @@ export async function logTimeline(input) {
     );
 
     let durationSecs = null;
+    const istNow = getISTTimestamp();
     if (prev.rows.length) {
       const prevAt = new Date(prev.rows[0].occurred_at).getTime();
-      const now = occurredAt ? new Date(occurredAt).getTime() : Date.now();
+      const now = occurredAt ? new Date(occurredAt).getTime() : istNow.getTime();
       durationSecs = Math.max(0, Math.round((now - prevAt) / 1000));
     }
 
@@ -65,12 +70,13 @@ export async function logTimeline(input) {
       paused = await isEntityOnHold(entityType, entityId);
     }
 
+    const occurredAtValue = occurredAt ? new Date(occurredAt) : istNow;
     const result = await pool.query(
       `INSERT INTO timeline_events
         (entity_type, entity_id, event_type, stage, actor_email, actor_role,
          summary, payload, from_state, to_state,
          duration_since_prev_seconds, hold_paused, occurred_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, COALESCE($13, NOW()))
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, $13)
        RETURNING *`,
       [
         entityType,
@@ -85,7 +91,7 @@ export async function logTimeline(input) {
         toState,
         durationSecs,
         paused,
-        occurredAt,
+        occurredAtValue,
       ]
     );
     return result.rows[0];

@@ -184,8 +184,8 @@ export default function CreateJob() {
   const isEdit = Boolean(id);
   const { user } = useAuth();
 
-  const [step, setStep] = useState(0);
-  const [sourceMode, setSourceMode] = useState('fresh');
+  const [step, setStep] = useState(isEdit ? 1 : 0);
+  const [sourceMode, setSourceMode] = useState(isEdit ? 'existing' : 'fresh');
   const [form, setForm] = useState({ ...EMPTY_FORM, hiring_stages: buildHiringFlow(3) });
   const [submitting, setSubmitting] = useState(false);
   const [generatingJD, setGeneratingJD] = useState(false);

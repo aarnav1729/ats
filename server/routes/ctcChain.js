@@ -140,7 +140,7 @@ router.post('/:applicationId/act', hrAny, async (req, res) => {
     if (decision === 'rejected') {
       newAppStatus = 'SalaryRejected';
     } else if (decision === 'renegotiate') {
-      // Bounce back to recruiter 1 — wipe later steps so they re-enter pending after re-submit
+      // Bounce back to recruiter 1  wipe later steps so they re-enter pending after re-submit
       await pool.query(
         `UPDATE ctc_approval_chain SET status = 'pending' WHERE application_id = $1 AND step_index < $2`,
         [app.id, pending.step_index]
@@ -168,7 +168,7 @@ router.post('/:applicationId/act', hrAny, async (req, res) => {
           eventType: 'ctc.approved',
           actorEmail: callerEmail,
           actorRole: callerRole,
-          summary: `CTC fully approved — sent to candidate for acceptance`,
+          summary: `CTC fully approved  sent to candidate for acceptance`,
           payload: { ats_job_id: app.ats_job_id },
         });
         if (app.candidate_email) {
@@ -198,7 +198,7 @@ router.post('/:applicationId/act', hrAny, async (req, res) => {
       eventType: `ctc.${decision}`,
       actorEmail: callerEmail,
       actorRole: callerRole,
-      summary: `${pending.role_required.replace('_', ' ')} ${decision} the CTC${comments ? ` — ${comments}` : ''}`,
+      summary: `${pending.role_required.replace('_', ' ')} ${decision} the CTC${comments ? `  ${comments}` : ''}`,
       payload: { step_index: pending.step_index, comments },
       toState: newAppStatus,
     });

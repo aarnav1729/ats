@@ -548,6 +548,10 @@ export async function ensureSchema() {
     ALTER TABLE applications ADD COLUMN IF NOT EXISTS banned_reason TEXT;
     ALTER TABLE applications ADD COLUMN IF NOT EXISTS banned_at TIMESTAMP;
     ALTER TABLE applications ADD COLUMN IF NOT EXISTS banned_by VARCHAR(255);
+    -- Phone column on users so post-Selected applicant seeding can persist
+    -- the candidate's phone (spec: "seed his profile as applicant in users").
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(40);
+
     ALTER TABLE audit_trail DROP CONSTRAINT IF EXISTS audit_trail_action_type_check;
     ALTER TABLE audit_trail ADD CONSTRAINT audit_trail_action_type_check
       CHECK (action_type IN (
@@ -560,7 +564,12 @@ export async function ensureSchema() {
         'hold', 'resume',
         'status_transition', 'send_email',
         'move_job', 'move_talent_pool',
-        'reset_slots', 'approve_doc', 'reject_doc'
+        'reset_slots', 'approve_doc', 'reject_doc',
+        -- transitionApplicationStatus side-effects + interview/offer flows
+        'transition', 'feedback', 'shortlist', 'no_show', 'reschedule',
+        'sign', 'accept', 'decline', 'withdraw', 'join',
+        'doc_request', 'doc_upload', 'doc_review',
+        'comment', 'note', 'export'
       ));
 
     -- Candidate Clearance (post-document approval flow)
@@ -606,6 +615,21 @@ export async function ensureSchema() {
     ALTER TABLE applications ADD COLUMN IF NOT EXISTS uploaded_by VARCHAR(255);
     ALTER TABLE applications ADD COLUMN IF NOT EXISTS is_duplicate BOOLEAN DEFAULT false;
     ALTER TABLE applications ADD COLUMN IF NOT EXISTS duplicate_of_id INTEGER REFERENCES applications(id);
+
+    CREATE TABLE IF NOT EXISTS duplicate_upload_audit (
+      id SERIAL PRIMARY KEY,
+      original_application_id INTEGER REFERENCES applications(id) ON DELETE SET NULL,
+      duplicate_application_id INTEGER REFERENCES applications(id) ON DELETE SET NULL,
+      original_uploaded_by VARCHAR(255),
+      duplicate_uploaded_by VARCHAR(255),
+      original_created_by VARCHAR(255),
+      duplicate_created_by VARCHAR(255),
+      match_type VARCHAR(100),
+      match_value TEXT,
+      original_ats_job_id VARCHAR(100),
+      duplicate_ats_job_id VARCHAR(100),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
 
     -- Email log for configurable email sends
     CREATE TABLE IF NOT EXISTS email_log (
@@ -667,11 +691,12 @@ export async function ensureSchema() {
     ALTER TABLE applications ADD COLUMN IF NOT EXISTS portal_first_login_at TIMESTAMP;
 
     -- Extend candidate_documents for candidate-initiated uploads + versions + review notes
-    ALTER TABLE candidate_documents ADD COLUMN IF NOT EXISTS uploaded_by_email VARCHAR(255);
-    ALTER TABLE candidate_documents ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
-    ALTER TABLE candidate_documents ADD COLUMN IF NOT EXISTS review_notes TEXT;
-    ALTER TABLE candidate_documents ADD COLUMN IF NOT EXISTS kind VARCHAR(40) DEFAULT 'document';
-    ALTER TABLE candidate_documents DROP CONSTRAINT IF EXISTS candidate_documents_stage_check;
+	    ALTER TABLE candidate_documents ADD COLUMN IF NOT EXISTS uploaded_by_email VARCHAR(255);
+	    ALTER TABLE candidate_documents ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
+	    ALTER TABLE candidate_documents ADD COLUMN IF NOT EXISTS review_notes TEXT;
+	    ALTER TABLE candidate_documents ADD COLUMN IF NOT EXISTS kind VARCHAR(40) DEFAULT 'document';
+	    ALTER TABLE candidate_documents ADD COLUMN IF NOT EXISTS last_reminded_at TIMESTAMP;
+	    ALTER TABLE candidate_documents DROP CONSTRAINT IF EXISTS candidate_documents_stage_check;
     ALTER TABLE candidate_documents ADD CONSTRAINT candidate_documents_stage_check
       CHECK (stage IN (
         'before_offer_release', 'after_offer_release', 'after_offer_acceptance',
@@ -692,8 +717,9 @@ export async function ensureSchema() {
       response_notes TEXT,
       token VARCHAR(128) UNIQUE
     );
-    CREATE INDEX IF NOT EXISTS idx_ctc_req_app ON ctc_acceptance_requests (application_id);
-    ALTER TABLE ctc_acceptance_requests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;
+	    CREATE INDEX IF NOT EXISTS idx_ctc_req_app ON ctc_acceptance_requests (application_id);
+	    ALTER TABLE ctc_acceptance_requests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;
+	    ALTER TABLE ctc_acceptance_requests ADD COLUMN IF NOT EXISTS signature_data TEXT;
 
     -- Store CTC as formatted text alongside JSON
     ALTER TABLE candidate_clearance ADD COLUMN IF NOT EXISTS ctc_text TEXT;
@@ -861,6 +887,51 @@ export async function ensureSchema() {
       created_at TIMESTAMP DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS idx_ctc_comparisons_app ON ctc_comparisons (application_id);
+
+    -- R2 + HR admin clearance tracking. The ctc_breakups row is the canonical
+    -- "package" that R2 + HR admin act on. r2_* / admin_* columns capture each
+    -- decision so the HR admin all-view can render the full picture.
+    ALTER TABLE ctc_breakups ADD COLUMN IF NOT EXISTS r2_decision VARCHAR(40);
+    ALTER TABLE ctc_breakups ADD COLUMN IF NOT EXISTS r2_email VARCHAR(255);
+    ALTER TABLE ctc_breakups ADD COLUMN IF NOT EXISTS r2_acted_at TIMESTAMP;
+    ALTER TABLE ctc_breakups ADD COLUMN IF NOT EXISTS r2_notes TEXT;
+    ALTER TABLE ctc_breakups ADD COLUMN IF NOT EXISTS admin_decision VARCHAR(40);
+    ALTER TABLE ctc_breakups ADD COLUMN IF NOT EXISTS admin_email VARCHAR(255);
+    ALTER TABLE ctc_breakups ADD COLUMN IF NOT EXISTS admin_acted_at TIMESTAMP;
+    ALTER TABLE ctc_breakups ADD COLUMN IF NOT EXISTS admin_notes TEXT;
+    -- Renegotiation hint: true when admin/recruiter sent back without new docs,
+    -- so we know not to re-trigger the document loop.
+    ALTER TABLE ctc_breakups ADD COLUMN IF NOT EXISTS skip_doc_recheck BOOLEAN DEFAULT false;
+
+    -- Per-application parallel approvers (all must approve to proceed). Created
+    -- when HR admin chooses "send to approvers". Each row is one assignee.
+    CREATE TABLE IF NOT EXISTS ctc_approvers (
+      id SERIAL PRIMARY KEY,
+      application_id INTEGER REFERENCES applications(id) ON DELETE CASCADE,
+      breakup_id INTEGER REFERENCES ctc_breakups(id) ON DELETE CASCADE,
+      assignee_email VARCHAR(255) NOT NULL,
+      assignee_name VARCHAR(255),
+      status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+      acted_at TIMESTAMP,
+      comments TEXT,
+      created_by_email VARCHAR(255),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_ctc_approvers_app ON ctc_approvers (application_id);
+    CREATE INDEX IF NOT EXISTS idx_ctc_approvers_assignee ON ctc_approvers (LOWER(assignee_email));
+
+    -- Seed the canonical CTC rejection reasons so HR admin's reject modal
+    -- can autoselect "CTC too high". Idempotent: skipped if it already exists.
+    INSERT INTO rejection_reasons (reason, reason_preview, active_flag)
+    SELECT 'CTC too high', 'CTC too high', true
+     WHERE NOT EXISTS (SELECT 1 FROM rejection_reasons WHERE reason = 'CTC too high');
+    INSERT INTO rejection_reasons (reason, reason_preview, active_flag)
+    SELECT 'Budget mismatch', 'Budget mismatch', true
+     WHERE NOT EXISTS (SELECT 1 FROM rejection_reasons WHERE reason = 'Budget mismatch');
+    INSERT INTO rejection_reasons (reason, reason_preview, active_flag)
+    SELECT 'Internal equity concern', 'Internal equity concern', true
+     WHERE NOT EXISTS (SELECT 1 FROM rejection_reasons WHERE reason = 'Internal equity concern');
+
     CREATE INDEX IF NOT EXISTS idx_email_log_ctx ON email_log (context_type, context_id);
 
     -- Scheduled reminders (for interview T-24h / T-30m, joining day, offer expiry)
@@ -881,6 +952,93 @@ export async function ensureSchema() {
   try {
     await pool.query(sql);
     console.log('All tables created successfully.');
+
+    const fixes = [
+      `ALTER TABLE locations ADD COLUMN IF NOT EXISTS id INTEGER`,
+      `ALTER TABLE locations ADD COLUMN IF NOT EXISTS bu_short_name VARCHAR(50)`,
+      `ALTER TABLE locations ADD COLUMN IF NOT EXISTS location_name VARCHAR(255)`,
+      `ALTER TABLE locations ADD COLUMN IF NOT EXISTS active_flag BOOLEAN DEFAULT true`,
+      `ALTER TABLE locations ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+      `ALTER TABLE locations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`,
+      `DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'locations' AND column_name = 'LocationID'
+        ) THEN
+          UPDATE locations SET id = "LocationID" WHERE id IS NULL;
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'locations' AND column_name = 'CompanyCode'
+        ) THEN
+          UPDATE locations SET bu_short_name = "CompanyCode" WHERE bu_short_name IS NULL;
+        END IF;
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'locations' AND column_name = 'LocationName'
+        ) THEN
+          UPDATE locations SET location_name = "LocationName" WHERE location_name IS NULL;
+        END IF;
+        UPDATE locations SET active_flag = true WHERE active_flag IS NULL;
+      END $$`,
+      `DO $$
+      DECLARE sequence_name text := 'locations_id_seq';
+      BEGIN
+        IF EXISTS (SELECT 1 FROM locations WHERE id IS NULL) THEN
+          WITH numbered AS (
+            SELECT ctid, ROW_NUMBER() OVER (ORDER BY location_name NULLS LAST) + COALESCE((SELECT MAX(id) FROM locations), 0) AS next_id
+            FROM locations
+            WHERE id IS NULL
+          )
+          UPDATE locations l SET id = numbered.next_id FROM numbered WHERE l.ctid = numbered.ctid;
+        END IF;
+        IF pg_get_serial_sequence('locations', 'id') IS NULL THEN
+          CREATE SEQUENCE IF NOT EXISTS locations_id_seq;
+          ALTER TABLE locations ALTER COLUMN id SET DEFAULT nextval('locations_id_seq');
+        END IF;
+        PERFORM setval(sequence_name::regclass, GREATEST(COALESCE((SELECT MAX(id) FROM locations), 0), 1), true);
+      END $$`,
+      `DO $$
+      DECLARE pk_exists boolean;
+      BEGIN
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.table_constraints
+          WHERE table_name = 'locations' AND constraint_type = 'PRIMARY KEY'
+        ) INTO pk_exists;
+        IF pk_exists THEN
+          ALTER TABLE locations DROP CONSTRAINT locations_pkey;
+        END IF;
+        ALTER TABLE locations ADD PRIMARY KEY (id);
+      END $$`,
+      `INSERT INTO locations (id, "LocationID", bu_short_name, "CompanyCode", location_name, "LocationName", active_flag)
+      VALUES
+        (1, 1, 'PEL', 1, 'Corporate Office', 'Corporate Office', true),
+        (2, 2, 'SMOD', 2, 'Hyderabad Manufacturing Campus', 'Hyderabad Manufacturing Campus', true),
+        (3, 3, 'PEPPL', 3, 'Fabcity', 'Fabcity', true),
+        (4, 4, 'PEGEPL', 4, 'Naydupeta', 'Naydupeta', true),
+        (5, 5, 'PEIPL', 5, 'P2', 'P2', true),
+        (6, 6, 'TR', 6, 'Hyderabad', 'Hyderabad', true),
+        (7, 7, 'PESSPL', 7, 'Sitharampur', 'Sitharampur', true)
+      ON CONFLICT (id) DO UPDATE SET
+        "LocationID" = EXCLUDED."LocationID",
+        bu_short_name = EXCLUDED.bu_short_name,
+        "CompanyCode" = EXCLUDED."CompanyCode",
+        location_name = EXCLUDED.location_name,
+        "LocationName" = EXCLUDED."LocationName",
+        active_flag = true,
+        updated_at = NOW()`,
+      `SELECT setval('locations_id_seq'::regclass, GREATEST(COALESCE((SELECT MAX(id) FROM locations), 0), 1), true)`,
+    ];
+
+    for (const fix of fixes) {
+      try {
+        await pool.query(fix);
+        console.log('Fix applied:', fix.substring(0, 50));
+      } catch (e) {
+        console.log('Fix skip or error:', e.message);
+      }
+    }
   } catch (err) {
     console.error('Migration failed:', err?.message || err);
     process.exit(1);

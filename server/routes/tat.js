@@ -6,7 +6,7 @@ import { TAT_PAIRS, listTatPairs, calculateTat, getPair } from '../services/tat.
 const router = Router();
 const adminOrRecruiter = requireRole('hr_admin', 'hr_recruiter', 'hod');
 
-// GET /tat/pairs — catalog of every TAT pair with its definition
+// GET /tat/pairs  catalog of every TAT pair with its definition
 router.get('/pairs', adminOrRecruiter, async (req, res) => {
   const level = req.query.level || null;
   res.json({ pairs: listTatPairs(level) });

@@ -19,7 +19,7 @@ export function Hero({ eyebrow, title, subtitle, actions }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// KPI tile — gradient accent bar, hover lift, optional click-through
+// KPI tile  gradient accent bar, hover lift, optional click-through
 // ──────────────────────────────────────────────────────────────────────────
 export function KPI({ eyebrow, value, foot, tone = 'brand', onClick, hint, animationDelay = 0 }) {
   return (
@@ -34,14 +34,14 @@ export function KPI({ eyebrow, value, foot, tone = 'brand', onClick, hint, anima
     >
       <div className="v2-kpi-accent" />
       <div className="v2-kpi-eyebrow">{eyebrow}</div>
-      <div className="v2-kpi-value">{value ?? '—'}</div>
+      <div className="v2-kpi-value">{value ?? ''}</div>
       {foot && <div className="v2-kpi-foot">{foot}</div>}
     </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Status pill — semantic stage colours
+// Status pill  semantic stage colours
 // ──────────────────────────────────────────────────────────────────────────
 const STAGE_MAP = {
   InQueue: 'queue', Applied: 'applied',
@@ -87,12 +87,12 @@ const HUMAN_LABEL = {
 };
 export function StatusPillV2({ status, children }) {
   const stage = STAGE_MAP[status] || 'queue';
-  const label = children || HUMAN_LABEL[status] || status || '—';
+  const label = children || HUMAN_LABEL[status] || status || '';
   return <span className="v2-pill" data-stage={stage}>{label}</span>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Timeline rail — vertical actor/action/timestamp display
+// Timeline rail  vertical actor/action/timestamp display
 // ──────────────────────────────────────────────────────────────────────────
 export function TimelineRail({ items }) {
   if (!items?.length) {
@@ -121,7 +121,7 @@ export function TimelineRail({ items }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Working modal — used by TAT explorer to show calculation provenance
+// Working modal  used by TAT explorer to show calculation provenance
 // ──────────────────────────────────────────────────────────────────────────
 export function WorkingModal({ open, onClose, title, children }) {
   if (!open) return null;
@@ -143,7 +143,7 @@ export function WorkingModal({ open, onClose, title, children }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// IST timestamp — uses Intl.DateTimeFormat in Asia/Kolkata
+// IST timestamp  uses Intl.DateTimeFormat in Asia/Kolkata
 // ──────────────────────────────────────────────────────────────────────────
 const IST_FMT = new Intl.DateTimeFormat('en-IN', {
   timeZone: 'Asia/Kolkata',
@@ -151,15 +151,15 @@ const IST_FMT = new Intl.DateTimeFormat('en-IN', {
   hour: '2-digit', minute: '2-digit', hour12: true,
 });
 export function fmtIST(ts) {
-  if (!ts) return '—';
+  if (!ts) return '';
   const d = ts instanceof Date ? ts : new Date(ts);
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return '';
   return `${IST_FMT.format(d)} IST`;
 }
 
-// Relative ("3 days ago") — quick glance
+// Relative ("3 days ago")  quick glance
 export function relTime(ts) {
-  if (!ts) return '—';
+  if (!ts) return '';
   const diff = Date.now() - new Date(ts).getTime();
   if (diff < 60_000) return 'just now';
   if (diff < 3600_000) return `${Math.floor(diff / 60000)}m ago`;
@@ -169,7 +169,7 @@ export function relTime(ts) {
 }
 
 export function humanDuration(seconds) {
-  if (seconds == null) return '—';
+  if (seconds == null) return '';
   if (seconds < 60) return `${seconds}s`;
   const m = Math.floor(seconds / 60);
   if (m < 60) return `${m}m ${seconds % 60}s`;
@@ -194,7 +194,7 @@ export function GhostBtn({ children, onClick, type = 'button' }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// In-view fade-up — auto-applies animation when element scrolls into view
+// In-view fade-up  auto-applies animation when element scrolls into view
 // ──────────────────────────────────────────────────────────────────────────
 export function Reveal({ children, delay = 0, as: Tag = 'div', className = '' }) {
   const ref = useRef(null);

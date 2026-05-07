@@ -754,7 +754,7 @@ router.delete('/seed', adminOnly, async (_req, res) => {
   }
 });
 
-// POST /demo/run-full — runs a complete demo flow: requisition → approval → job → candidates → interviews → selected → offered → joined
+// POST /demo/run-full  runs a complete demo flow: requisition → approval → job → candidates → interviews → selected → offered → joined
 router.post('/run-full', adminOnly, async (req, res) => {
   const client = await pool.connect();
   try {

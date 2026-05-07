@@ -4,7 +4,7 @@
 // All outbound mail flows through `renderBrandedEmail()` so the look stays
 // consistent and any future rebrand happens in one place.
 
-// Read the logo at module-load time so we can attach it inline (CID) — most
+// Read the logo at module-load time so we can attach it inline (CID). Most
 // corporate mail clients (incl. Outlook on Win/Mac) block external image URLs
 // by default. Falls back to a text-only header if the file is missing.
 import fs from 'node:fs';
@@ -14,13 +14,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function readLogo() {
   const candidates = [
+    path.resolve(__dirname, '..', '..', 'l.png'),
     path.resolve(__dirname, '..', '..', 'pel.png'),
     path.resolve(__dirname, '..', '..', 'logo.png'),
   ];
   for (const p of candidates) {
     try {
       if (fs.existsSync(p)) {
-        return { contentBytes: fs.readFileSync(p).toString('base64'), name: 'pel.png' };
+        return { contentBytes: fs.readFileSync(p).toString('base64'), name: path.basename(p) };
       }
     } catch { /* keep looking */ }
   }
@@ -51,10 +52,10 @@ const BRAND = {
   divider: '#e5e7eb',
   bg: '#f8fafc',
   white: '#ffffff',
-  // CID reference — Graph swaps this for the inline attachment named above.
+  // CID reference  Graph swaps this for the inline attachment named above.
   logoCid: LOGO_CID,
   // Public-URL fallback so the same shell works for any future SMTP transport.
-  logoUrl: process.env.BRAND_LOGO_URL || `${process.env.APP_URL || ''}/pel.png`,
+  logoUrl: process.env.BRAND_LOGO_URL || `${process.env.APP_URL || ''}/l.png`,
   wordmarkUrl: process.env.BRAND_WORDMARK_URL || `${process.env.APP_URL || ''}/l.png`,
 };
 
@@ -71,7 +72,7 @@ const IST_FMT = new Intl.DateTimeFormat('en-IN', {
 
 export function formatIST(date = new Date()) {
   const d = date instanceof Date ? date : new Date(date);
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return '';
   return `${IST_FMT.format(d)} IST`;
 }
 
@@ -91,7 +92,7 @@ function ctaButton({ label, href }) {
   return `
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:32px 0 0">
       <tr><td style="border-radius:8px;background:${BRAND.primary}">
-        <a href="${esc(href)}" style="display:inline-block;padding:12px 28px;font-family:-apple-system,'Segoe UI',Roboto,Inter,Arial,sans-serif;font-size:14px;font-weight:600;color:${BRAND.white};text-decoration:none;letter-spacing:0.01em">${esc(label)} →</a>
+        <a href="${esc(href)}" style="display:inline-block;padding:12px 28px;font-family:-apple-system,'Segoe UI',Roboto,Inter,Arial,sans-serif;font-size:14px;font-weight:600;color:${BRAND.white};text-decoration:none;letter-spacing:0.01em">${esc(label)}</a>
       </td></tr>
     </table>`;
 }
@@ -127,7 +128,9 @@ export function renderBrandedEmail({ preheader = '', title, bodyHtml, cta, conte
               <td valign="middle" width="48">
                 ${BRAND.logoCid
                   ? `<img src="cid:${BRAND.logoCid}" alt="${esc(BRAND.name)}" width="40" height="40" style="display:block;border:0;border-radius:8px;vertical-align:middle">`
-                  : `<div style="width:40px;height:40px;border-radius:8px;background:linear-gradient(135deg,${BRAND.primary},${BRAND.accent});display:inline-block;text-align:center;line-height:40px;color:#fff;font-weight:800;font-size:18px;letter-spacing:-0.02em">P</div>`}
+                  : BRAND.logoUrl
+                    ? `<img src="${BRAND.logoUrl}" alt="${esc(BRAND.name)}" width="40" height="40" style="display:block;border:0;border-radius:8px;vertical-align:middle">`
+                    : `<div style="width:40px;height:40px;border-radius:8px;background:linear-gradient(135deg,${BRAND.primary},${BRAND.accent});display:inline-block;text-align:center;line-height:40px;color:#fff;font-weight:800;font-size:18px;letter-spacing:-0.02em">P</div>`}
               </td>
               <td valign="middle" style="padding-left:14px">
                 <p style="margin:0;font-size:13px;font-weight:600;color:${BRAND.primary};letter-spacing:0.01em">${esc(BRAND.name)}</p>
@@ -147,7 +150,7 @@ export function renderBrandedEmail({ preheader = '', title, bodyHtml, cta, conte
         <!-- Footer: IST timestamp + product line. Deliberately quiet. -->
         <tr><td style="padding:24px 36px 28px;border-top:1px solid ${BRAND.divider};background:${BRAND.bg}">
           <p style="margin:0;font-size:12px;color:${BRAND.mute};line-height:1.6">
-            ${context ? `${esc(context)} · ` : ''}Sent ${formatIST()}
+            ${context ? `${esc(context)} | ` : ''}Sent ${formatIST()}
           </p>
           <p style="margin:8px 0 0;font-size:11px;color:${BRAND.mute};line-height:1.6">
             This is an automated message from the ${esc(BRAND.name)} ${esc(BRAND.product)} platform. For help, reply to this email and our recruiting team will respond within one business day.
@@ -172,7 +175,7 @@ export function rawHtml(html) {
 export function detailRow(label, value) {
   return `<tr>
     <td style="padding:10px 16px 10px 0;font-size:13px;color:${BRAND.mute};vertical-align:top;width:140px">${esc(label)}</td>
-    <td style="padding:10px 0;font-size:14px;color:${BRAND.ink};vertical-align:top;font-weight:500">${esc(value || '—')}</td>
+    <td style="padding:10px 0;font-size:14px;color:${BRAND.ink};vertical-align:top;font-weight:500">${esc(value || '')}</td>
   </tr>`;
 }
 
