@@ -105,7 +105,7 @@ export default function Jobs() {
     open: jobs.filter(j => j.status === 'open').length,
     onHold: jobs.filter(j => j.status === 'on_hold').length,
     closed: jobs.filter(j => j.status === 'closed').length,
-    applications: jobs.reduce((acc, j) => acc + Number(j.application_count || 0), 0),
+    applications: jobs.reduce((acc, j) => acc + (parseInt(j.application_count, 10) || 0), 0),
   }), [jobs]);
 
   return (

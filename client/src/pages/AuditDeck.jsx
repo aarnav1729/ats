@@ -453,7 +453,7 @@ function ThreadCard({ thread }) {
             {expanded ? '↑ Collapse thread' : `↓ Show ${thread.events.length - 1} earlier action${thread.events.length === 2 ? '' : 's'}`}
           </button>
         ) : <span />}
-        <details className="text-right">
+        <details open className="text-right">
           <summary className="text-xs text-slate-400 hover:text-slate-600 cursor-pointer">Technical details</summary>
           <pre className="v2-working mt-2 text-left">{JSON.stringify({ before: head.before_state, after: head.after_state, metadata: head.metadata }, null, 2)}</pre>
         </details>

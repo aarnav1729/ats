@@ -241,7 +241,7 @@ function WorkingDetail({ row, pair }) {
           {row.tat.duration_seconds != null ? `${row.tat.duration_seconds.toLocaleString()} seconds` : 'not computable'}
         </p>
       </div>
-      <details className="rounded-lg border border-slate-200">
+      <details open className="rounded-lg border border-slate-200">
         <summary className="cursor-pointer px-4 py-2 text-sm font-semibold text-slate-700 bg-slate-50">Raw rows used</summary>
         <pre className="v2-working m-0">
 {JSON.stringify({ from: f, to: t }, null, 2)}
