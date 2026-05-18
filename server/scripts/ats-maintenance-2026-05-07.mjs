@@ -2,9 +2,10 @@ import XLSX from 'xlsx';
 import pool from '../db.js';
 import { listSpotEmployees } from '../services/spot.js';
 
-const WORKBOOK_PATH = process.env.TRACKER_XLSX || '/Users/aarrated/Desktop/Open And offered tracker (1).xlsx';
+const WORKBOOK_PATH = process.env.TRACKER_XLSX || '/Users/aarrated/Desktop/Open And offered tracker.xlsx';
 const KEEP_JOB_ID = 'ATS-20260427-001';
 const ACTOR = 'codex-maintenance-2026-05-07';
+const ATS_JOB_PREFIX = process.env.ATS_JOB_PREFIX || 'ATS-20260507';
 
 const DEPARTMENTS = [
   'Human Resources', 'MDs Office', 'Procurement - Manufacturing', 'Company Secretary', 'Tenders', 'Sales',
@@ -388,15 +389,40 @@ function readTrackerRows() {
 async function buildEmployeeIndex() {
   const employees = await listSpotEmployees().catch(() => []);
   const byName = new Map();
+  const byId = new Map();
   for (const employee of employees) {
     byName.set(clean(employee.employee_name).toLowerCase(), employee);
+    byId.set(clean(employee.employee_id).toLowerCase(), employee);
   }
-  return byName;
+  return { byName, byId };
+}
+
+function parseReplacement(value) {
+  const raw = clean(value);
+  if (!raw || raw.toLowerCase() === 'new') {
+    return { requisitionType: 'new', raw, employeeId: '', employeeName: '' };
+  }
+
+  const hashId = raw.match(/#\s*([A-Z0-9]+)/i)?.[1] || '';
+  const replacementOfId = raw.match(/replacement\s+of\s+([A-Z0-9]+)/i)?.[1] || '';
+  const employeeId = clean(hashId || replacementOfId);
+  const employeeName = clean(raw.replace(/\([^)]*\)/g, '').replace(/replacement\s+of\s+[A-Z0-9]+/i, ''));
+
+  return {
+    requisitionType: 'replacement',
+    raw,
+    employeeId,
+    employeeName,
+  };
+}
+
+function generatedAtsJobId(index) {
+  return `${ATS_JOB_PREFIX}-${String(index + 1).padStart(4, '0')}`;
 }
 
 async function backfillTracker(client) {
   const rows = readTrackerRows();
-  const employeeByName = await buildEmployeeIndex();
+  const employeeIndex = await buildEmployeeIndex();
   let jobsCreated = 0;
   let applicationsCreated = 0;
 
@@ -412,20 +438,31 @@ async function backfillTracker(client) {
     const locationId = await getLocationId(client, clean(row.Branch), bu?.[0]);
     const phaseId = await getPhaseId(client, clean(row.Phase), clean(row.Branch));
     const levelId = LEVELS.includes(clean(row.Designation)) ? await getOrCreate(client, 'levels', 'level', clean(row.Designation)) : null;
-    const recruiter = employeeByName.get(clean(row.Recruiter).toLowerCase());
-    const secondary = employeeByName.get(clean(row['Another recriter']).toLowerCase());
-    const rawJobId = clean(row['Job ID']);
-    const jobId = rawJobId && !['extra position', 'need'].includes(rawJobId.toLowerCase())
-      ? rawJobId
-      : `BACKFILL-${String(index + 2).padStart(5, '0')}`;
+    const recruiter = employeeIndex.byName.get(clean(row.Recruiter).toLowerCase());
+    const secondary = employeeIndex.byName.get(clean(row['Another recriter']).toLowerCase());
+    const hrOneJobId = clean(row['Job ID']);
+    const jobId = generatedAtsJobId(index);
+    const replacement = parseReplacement(row['New/ Replacement']);
+    const replacementEmployee = replacement.employeeId
+      ? employeeIndex.byId.get(replacement.employeeId.toLowerCase())
+      : employeeIndex.byName.get(replacement.employeeName.toLowerCase());
     const jobTitle = clean(row['Job Title']) || [departmentName, subDepartmentName, clean(row.Designation), clean(row.Phase)].filter(Boolean).join(' - ');
+    const tatDays = Number(row.TAT);
+    const comments = [
+      hrOneJobId ? `HROne job code: ${hrOneJobId}` : '',
+      Number.isFinite(tatDays) ? `HROne TAT days: ${Math.round(tatDays * 100) / 100}` : '',
+      replacement.requisitionType === 'replacement'
+        ? `Replacement request: ${replacement.raw}${replacementEmployee ? ` | matched employee: ${replacementEmployee.employee_name} (${replacementEmployee.employee_id}) ${replacementEmployee.employee_email || ''}` : ''}`
+        : 'New position request',
+      clean(row['Reporting Manager']) ? `Reporting manager: ${clean(row['Reporting Manager'])}` : '',
+    ].filter(Boolean).join('\n');
 
     await client.query(
       `INSERT INTO jobs (
         job_id, status, job_title, department_id, sub_department_id, business_unit_id, location_id, phase_id,
         level_id, job_type, requisition_type, number_of_positions, total_positions, recruiter_email,
-        secondary_recruiter_email, created_by, created_at, updated_by
-      ) VALUES ($1,'open',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12,$13,$14,COALESCE($15::date,NOW()),$14)
+        secondary_recruiter_email, hr_one_job_id, hr_one_job_ids, additional_comments, created_by, created_at, updated_by
+      ) VALUES ($1,'open',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12,$13,$14,$15,$16,$17,COALESCE($18::date,NOW()),$17)
       ON CONFLICT (job_id) DO UPDATE SET
         job_title = EXCLUDED.job_title,
         department_id = EXCLUDED.department_id,
@@ -434,8 +471,15 @@ async function backfillTracker(client) {
         location_id = EXCLUDED.location_id,
         phase_id = EXCLUDED.phase_id,
         level_id = EXCLUDED.level_id,
+        job_type = EXCLUDED.job_type,
+        requisition_type = EXCLUDED.requisition_type,
+        number_of_positions = EXCLUDED.number_of_positions,
+        total_positions = EXCLUDED.total_positions,
         recruiter_email = EXCLUDED.recruiter_email,
         secondary_recruiter_email = EXCLUDED.secondary_recruiter_email,
+        hr_one_job_id = EXCLUDED.hr_one_job_id,
+        hr_one_job_ids = EXCLUDED.hr_one_job_ids,
+        additional_comments = EXCLUDED.additional_comments,
         active_flag = true,
         status = 'open',
         updated_at = NOW()`,
@@ -449,10 +493,13 @@ async function backfillTracker(client) {
         phaseId,
         levelId,
         clean(row['Permanent/Contractual']).toLowerCase() || 'permanent',
-        clean(row['New/ Replacement']).toLowerCase().includes('replacement') ? 'replacement' : 'new',
+        replacement.requisitionType,
         Number(row['Number of openings']) || 1,
         recruiter?.employee_email || null,
         secondary?.employee_email || clean(row['Another recriter']) || null,
+        hrOneJobId || null,
+        JSON.stringify(hrOneJobId ? [hrOneJobId] : []),
+        comments || null,
         ACTOR,
         dateOnly(row['Position Opened on']),
       ]
@@ -470,6 +517,8 @@ async function backfillTracker(client) {
     const candidateEmail = `backfill+${slug(candidateName)}.${index + 2}@premierenergies.invalid`;
     const remarks = [
       clean(row.Remarks),
+      hrOneJobId ? `HROne job code: ${hrOneJobId}` : '',
+      `ATS job code: ${jobId}`,
       clean(row['Solar/Non Solar']) ? `Solar tag: ${clean(row['Solar/Non Solar'])}` : '',
       dateOnly(row['Selection Date']) ? `Selection date: ${dateOnly(row['Selection Date'])}` : '',
       dateOnly(row['Offered Date']) ? `Offered date: ${dateOnly(row['Offered Date'])}` : '',
